@@ -186,6 +186,7 @@ PCB(ZCB_SetPowerDownTimeout)(BYTE timeout)
     ZW_DEBUG_BATT_SEND_NL();
     ZW_DEBUG_BATT_SEND_STR("New timeout val: ");
     ZW_DEBUG_BATT_SEND_NUM(timeout);
+    ZW_DEBUG_BATT_SEND_STR("\r\n");
     powerDownTicks = timeout;
   }
 }

@@ -183,6 +183,7 @@ typedef struct _AppEnv {
 /////////////////////////////////////////////////////////////////////////////////////
 // Function
 void mySleepTimerFunc(void); 
+void mySetPowerDownTimeoutWakeUpStateCheck(BYTE timeout);
 
 /* conf */
 void conf_load(void);
@@ -294,9 +295,26 @@ static const char *sleep_mask_str[] = {
 	"INT_MASK_EXT1",
 };
 
+static BYTE wakeupReason;
+static const char *wakeup_reason_str[] = {
+	"WAKEUP_RESET",					//0   /* Woken up by reset or external int */
+	"WAKEUP_WUT",						//1   /* Woken up by the WUT timer */
+	"WAKEUP_SENSOR",				//2   /* Woken up by a wakeup beam */
+	"WAKEUP_WATCHDOG",			//3
+	"WAKEUP_EXT_INT",				//4
+	"WAKEUP_POR",						//5
+	"WAKEUP_USB_SUSPEND",		//6
+};
+
+static BYTE				myPowerTimer = 0xff;
+static myRfTimeout = 0;
+
+#define SF_VERSION "1.0.0"
+
 /////////////////////////////////////////////////////////////////////////////////////
 // Initilize 
 BYTE  ApplicationInitHW(BYTE bWakeupReason) {
+	wakeupReason = bWakeupReason;
 
 	LedControlInit();
 	LedOn(2);
@@ -311,7 +329,10 @@ BYTE ApplicationInitSW( void ) {
   ZW_DEBUG_INIT(1152);
 #endif
 	
-	ZW_DEBUG_SEND_STR("Wakeup\r\n");
+	ZW_DEBUG_SEND_STR("Wakeup:");
+	ZW_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
+	ZW_DEBUG_SEND_STR("\r\n");
+	ZW_DEBUG_SEND_STR("SoftWare Version "SF_VERSION"\r\n");
 
 	ApplTimerInit();
 
@@ -321,7 +342,8 @@ BYTE ApplicationInitSW( void ) {
 
 	mySleepTimer =  ZW_TIMER_START(mySleepTimerFunc, 1 ,TIMER_FOREVER);  // 10 ms * 1
 
-	Transport_OnApplicationInitSW( &m_AppNIF, &ZCB_SetPowerDownTimeoutWakeUpStateCheck);	
+	//Transport_OnApplicationInitSW( &m_AppNIF, &ZCB_SetPowerDownTimeoutWakeUpStateCheck);	
+	Transport_OnApplicationInitSW( &m_AppNIF, &mySetPowerDownTimeoutWakeUpStateCheck);	
   return(TRUE);
 }
 
@@ -341,8 +363,7 @@ void ApplicationPoll(void) {
 /////////////////////////////////////////////////////////////////////////////////////
 // Learn More
 void LearnCompleted(BYTE bNodeID) {
-	stTask_t *t = &tasks[TASK_LEARN];
-
+	stTask_t *t = NULL;
 	ZW_DEBUG_SEND_STR("LearnCompleted\r\n");
 
   ZW_DEBUG_SEND_STR("Learn complete ");
@@ -350,10 +371,12 @@ void LearnCompleted(BYTE bNodeID) {
   ZW_DEBUG_SEND_NL();
 
 	//ApplTimerStop(&myLearnTimer);
-
+	t = &tasks[TASK_LEARN];
 	if (t->status == TS_LEARN_STARING) {
 		t->status = TS_LEARN_START_DONE;
-	} else if (t->status == TS_RESETING) {
+	} 
+	t = &tasks[TASK_RESET];
+	if (t->status == TS_RESETING) {
 		t->status = TS_RESET_DONE;
 	}
 
@@ -422,6 +445,12 @@ PCB(mySleepTimerFunc)(void) {
 	BYTE mode;
 	BYTE mask;
 	BYTE timeout;
+
+	if (myRfTimeout != 0) {
+		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Failed, has rf Task.\r\n");
+		return;
+	}
+
 	if (task_get_cnt() > 0 && task_must_wake()) {
 		//has task to do, can do sleep
 		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Failed, Task not permit!\r\n");
@@ -450,13 +479,14 @@ PCB(mySleepTimerFunc)(void) {
 	
 	timeout = task_get_min_task_time();
 	if (misc_node_included() && misc_rf_failcnt() > 30) {
-		timeout = 0xff;
+		timeout = 0xff - 1;
 	}
 	if (timeout == 0) {
 		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Timeout 0, Not Sleep\r\n");
 		return;
 	}
 
+	ZW_SetWutTimeout(timeout);
 	if (!ZW_SetSleepMode(mode,mask,0)) {
 		//ZW_DEBUG_SEND_STR("sleep failed\r\n");
 		return;
@@ -471,11 +501,25 @@ PCB(mySleepTimerFunc)(void) {
 	//ZW_DEBUG_SEND_NUM(mode);
 	ZW_DEBUG_SEND_STR(sleep_mode_str[mode]);
 	ZW_DEBUG_SEND_STR(",mask:");
-	ZW_DEBUG_SEND_NUM(mask);
-	ZW_DEBUG_SEND_STR(sleep_mask_str[mode]);
+	//ZW_DEBUG_SEND_NUM(mask);
+	ZW_DEBUG_SEND_STR(sleep_mask_str[mask]);
 	ZW_DEBUG_SEND_STR(",timeout:");
 	ZW_DEBUG_SEND_NUM(timeout);
 	ZW_DEBUG_SEND_STR("\r\n");
+}
+
+
+void misc_zw_setpowerdown_timeout() {
+	ApplTimerStop(&myPowerTimer);
+	myRfTimeout = 0;
+}
+PCB(mySetPowerDownTimeoutWakeUpStateCheck)(BYTE timeout) {
+	ZW_DEBUG_SEND_STR("SetPowerDownTimeoutWakeupStateCheck:");
+	ZW_DEBUG_SEND_NUM(timeout);
+	ZW_DEBUG_SEND_STR("\r\n");
+
+	myPowerTimer = ApplTimerStart(misc_zw_setpowerdown_timeout, timeout, 1);
+	myRfTimeout = !!timeout;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -525,7 +569,7 @@ void misc_nodeid_save() {
 	//
 }
 void misc_nodeid_load() {
-	MemoryGetID(&myEnv.HomeID, &myEnv.NodeID);
+	MemoryGetID(NULL, &myEnv.NodeID);
 }
 BYTE misc_nodeid_get() {
 	return (myEnv.NodeID);
@@ -608,7 +652,7 @@ void misc_zw_reset() {
 	//myLearnTimer = ApplTimerStart(misc_zw_reset_timeout, 3, 1);
 }
 void misc_zw_reset_done(char status) {
-	ZW_DEBUG_SEND_STR("misc_zw_reset_done(nodeid:\r\n");
+	ZW_DEBUG_SEND_STR("misc_zw_reset_done(nodeid:");
 	ZW_DEBUG_SEND_NUM(myEnv.NodeID);
 	ZW_DEBUG_SEND_STR(")\r\n");
 }
@@ -756,6 +800,8 @@ void task_do() {
 /////////////////////////////////////////////////////////////////////////////////////
 // btn pressed
 BYTE btn_pressed() {
+	static int x = 1;
+
 	BYTE v24 = !!PIN_GET(P24);
 	BYTE v36 = !!PIN_GET(P36);
 	BYTE v   = (v24 << 1) | v36;
@@ -769,7 +815,11 @@ BYTE btn_pressed() {
 	}
 
 #if 1 /* test from remote no button to be pressed */
-	return 1;
+	if (x == 1) {
+		x = 0;
+		return 1;
+	}
+	return 0;
 #else
 	return 0;
 #endif
@@ -786,7 +836,7 @@ static BYTE check_btn(BYTE *s) {
 			}
 		} else {
 			stTask_t *t = &tasks[TASK_RESET];
-			if (t->status == TS_RESET) {
+			if (t->status == TS_NONE) {
 				*s = TS_RESET;
 				return TASK_RESET;
 			}
