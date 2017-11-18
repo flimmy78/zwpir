@@ -66,8 +66,6 @@ extern IBYTE P3ShadowDIR;
 /* Read pin value:
  *    pin     - Z-Wave pin name
  */
- 5Port
-P01
 #define PIN_GET(pin)  (pin##Port & (1<<pin))
 
 /* Set output pin to 1:

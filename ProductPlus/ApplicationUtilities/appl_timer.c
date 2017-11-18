@@ -241,4 +241,3 @@ ApplTimerInit()
     return TRUE;
 }
 
-
