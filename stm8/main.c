@@ -232,9 +232,31 @@ static void test_msg_led(u8 on) {
 #endif
 
 
+
+/* io init */
+static void io_init() {
+	GPIO_Init(GPIOA, 
+			GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_6|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_6,
+			GPIO_Mode_Out_PP_Low_Slow
+	);
+	GPIO_Init(GPIOB, 
+			GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_6|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7, 
+			GPIO_Mode_Out_PP_Low_Slow);
+	GPIO_Init(GPIOC, 
+			GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_6|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_6, 
+			GPIO_Mode_Out_PP_Low_Slow);
+	GPIO_Init(GPIOD, 
+			GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_6|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7, 
+			GPIO_Mode_Out_PP_Low_Slow);
+}
+
+
+
 /* main */
 int main() {
 	u8 flag = 0;
+
+	io_init();
 
 	clock_init(CLK_MasterPrescaler_HSIDiv2);	/* HSI 8M Hz */
 
