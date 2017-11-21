@@ -18,6 +18,10 @@
 	- ZM5202  
 		TODO..  
 
+# TODO:
+	- STM8L101
+		1. 当检测到有人的时候,再检测到有人的时候关闭中断
+
 # Version:  
 	V1.0.0_zwpir_beta0:
 		- Functions:  
