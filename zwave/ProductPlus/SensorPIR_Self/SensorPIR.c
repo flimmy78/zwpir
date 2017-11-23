@@ -309,6 +309,12 @@ static const char *wakeup_reason_str[] = {
 static BYTE				myPowerTimer = 0xff;
 static myRfTimeout = 0;
 
+static	BYTE v24 = 1;
+static	BYTE v36 = 1;
+static	BYTE	 v = 0x03;
+static	BYTE	mo = 0;
+	
+
 #define SF_VERSION "1.0.0"
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -318,7 +324,10 @@ BYTE  ApplicationInitHW(BYTE bWakeupReason) {
 
 	LedControlInit();
 	LedOn(2);
-	
+
+	v24 = !!PIN_GET(P24);
+	v36 = !!PIN_GET(P36);
+	v		= (v36 << 1) | v24;
 
 	Transport_OnApplicationInitHW(bWakeupReason);
   return(TRUE);
@@ -329,7 +338,7 @@ BYTE ApplicationInitSW( void ) {
   ZW_DEBUG_INIT(1152);
 #endif
 	
-	ZW_DEBUG_SEND_STR("Wakeup:");
+	ZW_DEBUG_SEND_STR("\r\nWakeup:");
 	ZW_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
 	ZW_DEBUG_SEND_STR("\r\n");
 	ZW_DEBUG_SEND_STR("SoftWare Version "SF_VERSION"\r\n");
@@ -399,12 +408,87 @@ void LearnCompleted(BYTE bNodeID) {
 // ZWave Cmd, RF Relatives
 void Transport_ApplicationCommandHandler(BYTE  rxStatus, BYTE  sourceNode, 
 																					ZW_APPLICATION_TX_BUFFER *pCmd, BYTE   cmdLength) {
+
+  BYTE txOption;
+
+  txOption = ((rxStatus & RECEIVE_STATUS_LOW_POWER) ? 
+								TRANSMIT_OPTION_LOW_POWER : 0)
+             |	ZWAVE_PLUS_TX_OPTIONS;
+
 	ZW_DEBUG_SEND_STR("Transport_ApplicationCommandHandler\r\n");	
+
+  switch (pCmd->ZW_Common.cmdClass) {
+    case COMMAND_CLASS_VERSION:
+      handleCommandClassVersion(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+#ifdef BOOTLOADER_ENABLED
+    case COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2:
+      handleCommandClassFWUpdate(txOption, sourceNode, pCmd, cmdLength);
+      break;
+#endif
+
+
+    case COMMAND_CLASS_ASSOCIATION_GRP_INFO:
+      handleCommandClassAssociationGroupInfo( txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_ASSOCIATION:
+			handleCommandClassAssociation(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_POWERLEVEL:
+      handleCommandClassPowerLevel(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_MANUFACTURER_SPECIFIC:
+      handleCommandClassManufacturerSpecific(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_ZWAVEPLUS_INFO:
+      handleCommandClassZWavePlusInfo(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+   case COMMAND_CLASS_BATTERY:
+      handleCommandClassBattery(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_NOTIFICATION_V3:
+      handleCommandClassNotification(txOption, sourceNode, pCmd, cmdLength);
+      break;
+
+    case COMMAND_CLASS_WAKE_UP:
+      HandleCommandClassWakeUp(txOption, sourceNode, pCmd, cmdLength);
+      break;
+  }
 
 }
 	
 BYTE handleCommandClassVersionAppl(BYTE cmdClass) {
 	ZW_DEBUG_SEND_STR("handleCommandClassVersionAppl\r\n");	
+
+  switch (cmdClass)
+  {
+    case COMMAND_CLASS_VERSION:               return CommandClassVersionVersionGet();
+    case COMMAND_CLASS_POWERLEVEL:            return CommandClassPowerLevelVersionGet();
+    case COMMAND_CLASS_MANUFACTURER_SPECIFIC: return CommandClassManufacturerVersionGet();
+    case COMMAND_CLASS_ASSOCIATION:           return CommandClassAssociationVersionGet();
+    case COMMAND_CLASS_ASSOCIATION_GRP_INFO:  return CommandClassAssociationGroupInfoVersionGet();
+    case COMMAND_CLASS_DEVICE_RESET_LOCALLY:  return CommandClassDeviceResetLocallyVersionGet();
+    case COMMAND_CLASS_ZWAVEPLUS_INFO:        return CommandClassZWavePlusVersion();
+    case COMMAND_CLASS_BASIC:                 return CommandClassBasicVersionGet();
+    case COMMAND_CLASS_BATTERY:               return CommandClassBatteryVersionGet();
+    case COMMAND_CLASS_NOTIFICATION_V3:       return CommandClassNotificationVersionGet();
+    case COMMAND_CLASS_WAKE_UP:               return CmdClassWakeupVersion();
+#ifdef BOOTLOADER_ENABLED
+    case COMMAND_CLASS_FIRMWARE_UPDATE_MD:    return CommandClassFirmwareUpdateMdVersionGet();
+#endif
+#ifdef SECURITY
+    case COMMAND_CLASS_SECURITY:              return CommandClassSecurityVersionGet();
+#endif
+    default:
+     return UNKNOWN_VERSION;
+  }
 
 	return UNKNOWN_VERSION;
 }
@@ -419,6 +503,14 @@ BYTE handleNbrFirmwareVersions(void) {
 void handleGetFirmwareVersion( BYTE bFirmwareNumber, VG_VERSION_REPORT_V2_VG* pVariantgroup) {
 	ZW_DEBUG_SEND_STR("handleGetFirmwareVersion\r\n");	
 
+  if(bFirmwareNumber == 0) {
+    pVariantgroup->firmwareVersion = APP_VERSION;
+    pVariantgroup->firmwareSubVersion = APP_REVISION;
+  } else {
+    /*Just set it to 0 if firmware n is not present*/
+    pVariantgroup->firmwareVersion = 0;
+    pVariantgroup->firmwareSubVersion = 0;
+  }
 }
 
 void handleBasicSetCommand(  BYTE val ) {
@@ -544,8 +636,7 @@ void conf_load(void) {
 		ZW_DEBUG_SEND_NUM(nvs.abUUID[i]);
 	}
 	ZW_DEBUG_SEND_STR("\r\n");
-
-
+	ManufacturerSpecificDeviceIDInit();
 
 	//MemoryGetBuffer((WORD)&nvmApplDescriptor, &nvmappl, sizeof(nvmappl));
 	//MemoryGetBuffer((WORD)&nvmDescriptor, &nvmdesc, sizeof(nvmdesc));
@@ -600,10 +691,13 @@ void misc_rf_failcnt_clr() {
 }
 
 void misc_zw_send_motion() {
-	ZW_DEBUG_SEND_STR("misc_zw_send_motion(\r\n");
+	ZW_DEBUG_SEND_STR("misc_zw_send_motion:");
+	ZW_DEBUG_SEND_NUM(mo);
+	ZW_DEBUG_SEND_STR("\r\n");
 	/* TODO */
 }
 void misc_zw_send_motion_done(char status) {
+	ZW_DEBUG_SEND_STR("misc_zw_send_motion_done\r\n");
 }
 
 void misc_zw_send_battery() {
@@ -800,21 +894,31 @@ void task_do() {
 /////////////////////////////////////////////////////////////////////////////////////
 // btn pressed
 BYTE btn_pressed() {
+#if 0
 	static int x = 1;
+#endif
 
-	BYTE v24 = !!PIN_GET(P24);
-	BYTE v36 = !!PIN_GET(P36);
-	BYTE v   = (v24 << 1) | v36;
+	//BYTE v24 = !!PIN_GET(P24);
+	//BYTE v36 = !!PIN_GET(P36);
+	//BYTE v   = (v24 << 1) | v36;
 
-	//ZW_DEBUG_SEND_STR("Btn:");
-	//ZW_DEBUG_SEND_NUM(v);
-	//ZW_DEBUG_SEND_STR("\r\n");
+	/*
+	if (v != 0x03) {
+		ZW_DEBUG_SEND_STR("Btn:");
+		ZW_DEBUG_SEND_NUM(v);
+		ZW_DEBUG_SEND_STR("\r\n");
+	}
+	*/
 
-	if (v == 0x01) {
+	if (v == 0x02) {
+		ZW_DEBUG_SEND_STR("Key Pressed:");
+		ZW_DEBUG_SEND_NUM(v);
+		ZW_DEBUG_SEND_STR("\r\n");
+		v = 0x03;
 		return !0;
 	}
 
-#if 1 /* test from remote no button to be pressed */
+#if 0 /* test from remote no button to be pressed */
 	if (x == 1) {
 		x = 0;
 		return 1;
@@ -824,6 +928,24 @@ BYTE btn_pressed() {
 	return 0;
 #endif
 }
+// pir pressed
+BYTE pir_triger() {
+	if (v == 0x00) {
+		ZW_DEBUG_SEND_STR("No Person Signal:");
+		ZW_DEBUG_SEND_NUM(v);
+		ZW_DEBUG_SEND_STR("\r\n");
+		v = 0x03;
+		return 0x01;
+	} else if (v == 0x01) {
+		ZW_DEBUG_SEND_STR("Has Person Signal:");
+		ZW_DEBUG_SEND_NUM(v);
+		ZW_DEBUG_SEND_STR("\r\n");
+		v = 0x03;
+		return 0x02;
+	}
+	return 0;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////
 // check in 
 static BYTE check_btn(BYTE *s) {
@@ -846,6 +968,29 @@ static BYTE check_btn(BYTE *s) {
 	return TASK_NONE;
 }
 static BYTE check_pir(BYTE *s) {
+	BYTE pir = pir_triger();
+
+
+	if (pir) {
+		stTask_t *t = &tasks[TASK_MOTION];
+		if (pir == 0x01) {
+			mo = 0;
+		} else if (pir == 0x02) {
+			mo = 1;
+		}
+
+		if (!misc_node_included()) {
+			ZW_DEBUG_SEND_STR("Not Inlcuded, Do't deal Motion Signal:");
+			ZW_DEBUG_SEND_NUM(mo);
+			ZW_DEBUG_SEND_STR("\r\n");
+			return TASK_NONE;
+		}
+
+		if (t->status == TS_NONE) {
+			*s = TS_MOTION;
+			return TASK_MOTION;
+		}
+	}
 	return TASK_NONE;
 }
 static BYTE check_battery(BYTE *s) {
@@ -997,6 +1142,7 @@ static char func_motion(void *arg) {
 		break;
 		case TS_MOTIONING:
 			/* wait motioning ack */
+			t->status = TS_MOTION_DONE;
 		break;
 		case TS_MOTION_DONE:
 			misc_zw_send_motion_done(0);

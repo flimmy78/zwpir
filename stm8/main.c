@@ -195,7 +195,8 @@ static void msg_post(u8 x, u8 y) {
 	
 	//PB7 = 0;
 	GPIO_ResetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
-	mdelay(1);
+	//mdelay(41);
+	mdelay(23);
 	//PB7 = 1;
 	GPIO_SetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
 
