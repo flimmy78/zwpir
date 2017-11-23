@@ -114,6 +114,10 @@ static APP_NODE_INFORMATION m_AppNIF = {
   DEVICE_OPTIONS_MASK, GENERIC_TYPE, SPECIFIC_TYPE
 };
 
+CMD_CLASS_GRP  agiTableLifeLine[] = {AGITABLE_LIFELINE_GROUP};
+AGI_GROUP agiTableRootDeviceGroups[] = {AGITABLE_ROOTDEVICE_GROUPS};
+
+
 /////////////////////////////////////////////////////////////////////////////////////
 // Task Def
 typedef char (*TASK_FUNC)(void *);
@@ -370,7 +374,7 @@ void ApplicationPoll(void) {
 	task_do();
 }
 /////////////////////////////////////////////////////////////////////////////////////
-// Learn More
+// Complete More
 void LearnCompleted(BYTE bNodeID) {
 	stTask_t *t = NULL;
 	ZW_DEBUG_SEND_STR("LearnCompleted\r\n");
@@ -402,6 +406,7 @@ void LearnCompleted(BYTE bNodeID) {
 
   Transport_OnLearnCompleted(bNodeID);
 }
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -610,6 +615,7 @@ PCB(mySetPowerDownTimeoutWakeUpStateCheck)(BYTE timeout) {
 	ZW_DEBUG_SEND_NUM(timeout);
 	ZW_DEBUG_SEND_STR("\r\n");
 
+	ApplTimerStop(&myPowerTimer);
 	myPowerTimer = ApplTimerStart(misc_zw_setpowerdown_timeout, timeout, 1);
 	myRfTimeout = !!timeout;
 }
@@ -632,7 +638,7 @@ void conf_load(void) {
 	ZW_DEBUG_SEND_STR(",SAWBandWidth:");
 	ZW_DEBUG_SEND_NUM(nvs.bSAWBandwidth);
 	ZW_DEBUG_SEND_STR(",UUID:");
-	for (i = sizeof(nvs.abUUID)-8; i < sizeof(nvs.abUUID); i++) {
+	for (i = 1; i < 9; i++) {
 		ZW_DEBUG_SEND_NUM(nvs.abUUID[i]);
 	}
 	ZW_DEBUG_SEND_STR("\r\n");
@@ -689,15 +695,37 @@ void misc_rf_failcnt_clr() {
 	myEnv.RfFailCnt = 0;
 	misc_rf_failcnt_save();
 }
-
+void misc_zw_send_motion_completed(BYTE bStatus) {
+  /*application do not take care of bStatus!*/
+  //AddEvent(EVENT_APP_GET_NODELIST);
+	stTask_t *t = &tasks[TASK_MOTION];
+	ZW_DEBUG_SEND_STR("misc_zw_send_motion_completed\r\n");
+	t->status = TS_MOTION_DONE;
+}
 void misc_zw_send_motion() {
+	BYTE notificationType		= NOTIFICATION_REPORT_BURGLAR_V3;
+	BYTE notificationEvent	= NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION;
+	JOB_STATUS ret = 0;
+
 	ZW_DEBUG_SEND_STR("misc_zw_send_motion:");
 	ZW_DEBUG_SEND_NUM(mo);
+	ZW_DEBUG_SEND_STR(",");
+	ZW_DEBUG_SEND_NUM(notificationType);
+	ZW_DEBUG_SEND_STR(",");
+	ZW_DEBUG_SEND_NUM(notificationEvent);
 	ZW_DEBUG_SEND_STR("\r\n");
-	/* TODO */
+
+  NotificationEventTrigger(notificationType,notificationEvent);
+  ret = CmdClassNotificationReport(0x01, notificationType, notificationEvent,misc_zw_send_motion_completed);
+
+	ZW_DEBUG_SEND_STR("misc_zw_send_motion ret:");
+	ZW_DEBUG_SEND_NUM(ret);
+	ZW_DEBUG_SEND_STR("\r\n");
 }
 void misc_zw_send_motion_done(char status) {
 	ZW_DEBUG_SEND_STR("misc_zw_send_motion_done\r\n");
+	ApplTimerStop(&myPowerTimer);
+	myRfTimeout = 0;
 }
 
 void misc_zw_send_battery() {
@@ -751,18 +779,36 @@ void misc_zw_reset_done(char status) {
 	ZW_DEBUG_SEND_STR(")\r\n");
 }
 
+
+void misc_zw_set_default() {
+  AssociationInit(TRUE);
+
+  //MemoryPutByte((WORD)&nvmApplDescriptor.alarmStatus_far, 0xFF);
+
+  //SetDefaultBatteryConfiguration(DEFAULT_SLEEP_TIME);
+
+  //MemoryPutByte((WORD)&nvmApplDescriptor.EEOFFSET_MAGIC_far, APPL_MAGIC_VALUE);
+
+	/* notifaction dest */
+  //CmdClassWakeUpNotificationMemorySetDefault();
+}
 void misc_zw_init() {
-	/*
+	if (misc_node_included()) {
+	} else {
+    Transport_SetDefault();
+		misc_zw_set_default();
+	}
+
 	AssociationInit(FALSE);
   AGI_LifeLineGroupSetup(agiTableLifeLine, 
 				(sizeof(agiTableLifeLine)/sizeof(CMD_CLASS_GRP)));
   AGI_ResourceGroupSetup(agiTableRootDeviceGroups, 
 				(sizeof(agiTableRootDeviceGroups)/sizeof(AGI_GROUP)), 1);
+
   InitNotification();
   AddNotification(NOTIFICATION_REPORT_BURGLAR_V3,
 				NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION,
-				NULL, 0);
-	*/
+				&mo, 1);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -1142,7 +1188,7 @@ static char func_motion(void *arg) {
 		break;
 		case TS_MOTIONING:
 			/* wait motioning ack */
-			t->status = TS_MOTION_DONE;
+			//t->status = TS_MOTION_DONE;
 		break;
 		case TS_MOTION_DONE:
 			misc_zw_send_motion_done(0);
