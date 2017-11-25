@@ -86,7 +86,7 @@ void
 ManufacturerSpecificDeviceIDInit()
 {
  /*Read UUID from NVR*/
-  ZW_NVRGetValue(offsetof(NVR_FLASH_STRUCT, abUUID)+1, MAN_DEVICE_ID_SIZE, manSpecificDeviceID);
+  ZW_NVRGetValue(offsetof(NVR_FLASH_STRUCT, abUUID), MAN_DEVICE_ID_SIZE, manSpecificDeviceID);
   /* if the UUID is leagal use it as the manufacturer specific device ID
      else create a random Id and save it in the eeprom */
   if (!CheckDeviceID(manSpecificDeviceID))
