@@ -230,6 +230,8 @@ void misc_zw_learn_done(char status);
 void misc_zw_reset();
 void misc_zw_reset_done(char status);
 
+void misc_msg_wait_timeout();
+
 /* task */
 void task_set(BYTE t, BYTE s);
 BYTE task_get_cnt();
@@ -318,13 +320,42 @@ static const char *wakeup_reason_str[] = {
 };
 
 static BYTE				myPowerTimer = 0xff;
-static myRfTimeout = 0;
+static BYTE myRfTimeout = 0;
+static BYTE				myMsgWaitTimer = 0xff;
+static BYTE	myMsgTimeout = 0;
 
 static	BYTE v24 = 1;
 static	BYTE v36 = 1;
 static	BYTE	 v = 0x03;
 static	BYTE	mo = 0;
-	
+
+/* FE CMD1 CMD2 LEN DATA CHK */
+enum {
+  S_WAIT_HEAD,
+  S_WAIT_CMD1,
+  S_WAIT_CMD2,
+  S_WAIT_LEN,
+  S_WAIT_DATA,
+  S_WAIT_CHECK,
+};
+#define MAX_FRAME_LEN 128
+static BYTE frame[MAX_FRAME_LEN - 5];
+static BYTE sts = 0;
+static BYTE flen = 0;
+static BYTE len = 0;
+static BYTE rlen = 0;
+static BYTE sum = 0;
+static void SerialPollReset();
+static BYTE SerialPoll();
+static void SerialSendFrame(BYTE cmd1, BYTE cmd2, BYTE *da, BYTE len);
+/* 
+  name        	src       req            				res
+  st wake zwave stm8      int1            			(0x01|0x80) 0x55
+
+  btn press			stm8 		 0x41 0x55       				(0x41|0x80) 0x55
+  has person    stm8     0x42 0x55       				(0x42|0x80) 0x55
+  no  person    stm8     0x43 0x55       				(0x43|0x80) 0x55
+*/	
 
 #define SF_VERSION "1.0.0"
 
@@ -339,9 +370,10 @@ BYTE  ApplicationInitHW(BYTE bWakeupReason) {
 	LedControlInit();
 	LedOff(2);
 
-	v24 = !!PIN_GET(P24);
-	v36 = !!PIN_GET(P36);
-	v		= (v36 << 1) | v24;
+	//v24 = !!PIN_GET(P24);
+	//v36 = !!PIN_GET(P36);
+	//v		= (v36 << 1) | v24;
+	v  = 0x03;
 
 	Transport_OnApplicationInitHW(bWakeupReason);
   return(TRUE);
@@ -353,6 +385,11 @@ void My_SerialSendStr(char *str) {
 		ZW_SerialFlush();  
 		str++;
 	}
+}
+
+void misc_msg_wait_timeout() {
+	ApplTimerStop(&myMsgWaitTimer);
+	myMsgTimeout = 0;
 }
 
 BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
@@ -367,15 +404,23 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
 #endif
 
 	//ZW_UART0_zm5202_mode_enable(TRUE);
-  //ZW_InitSerialIf(1152);
-  //ZW_FinishSerialIf();
-	//My_SerialSendStr("WakeUp\r\n");
-	//while (ZW_SerialCheck()) {
-	//	BYTE x =  ZW_SerialGetByte();
-	//	ZW_SerialPutByte(x);
-	//	ZW_SerialFlush();  
-	//	LedToggle(2);
-	//}
+  ZW_InitSerialIf(1152);
+  ZW_FinishSerialIf();
+	SerialPollReset();
+	//My_SerialSendStr("Wakeup\r\n");
+	SerialSendFrame(0x01|0x80, 0x55, 0, 0);
+	/*
+	ZW_SerialPutByte(0xFE);
+	ZW_SerialFlush();
+	ZW_SerialPutByte(0x01);
+	ZW_SerialFlush();
+	ZW_SerialPutByte(0x55);
+	ZW_SerialFlush();
+	ZW_SerialPutByte(0x00);
+	ZW_SerialFlush();
+	ZW_SerialPutByte(0x54);
+	ZW_SerialFlush();
+	*/
 	
 	ZW_DEBUG_SEND_STR("\r\nWakeup:");
 	ZW_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
@@ -388,7 +433,11 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
 
 	misc_zw_init();
 
-	mySleepTimer =  ZW_TIMER_START(mySleepTimerFunc, 1 ,TIMER_FOREVER);  // 10 ms * 1
+	mySleepTimer		=  ZW_TIMER_START(mySleepTimerFunc, 1 ,TIMER_FOREVER);  // 10 ms * 1
+
+	
+	myMsgTimeout = 1;
+	myMsgWaitTimer	=	 ApplTimerStart(misc_msg_wait_timeout, 1, 1);
 
 	//Transport_OnApplicationInitSW( &m_AppNIF, &ZCB_SetPowerDownTimeoutWakeUpStateCheck);	
 	Transport_OnApplicationInitSW( &m_AppNIF, &mySetPowerDownTimeoutWakeUpStateCheck);	
@@ -401,10 +450,40 @@ void ApplicationPoll(void) {
 	
 #ifdef WATCHDOG_ENABLED
   ZW_WatchDogKick(); 
+
 #endif	
+
+	//while (ZW_SerialCheck()) {
+	//	BYTE x =  ZW_SerialGetByte();
+		//ZW_SerialPutByte(x);
+	//	ZW_SerialFlush();  
+	//	LedToggle(2);
+	//}
 
 	//ZW_DEBUG_SEND_STR("ApplicationPoll\r\n");	
 	//My_SerialSendStr("WakeUp\r\n");
+	
+	if (SerialPoll()) {
+		switch (frame[1]) {
+			case 0x41:
+				v = 0x02;
+			My_SerialSendStr("Btn Pressed\r\n");
+				break;
+			case 0x42:
+				v = 0x01;
+			My_SerialSendStr("Has Person\r\n");
+				break;
+			case 0x43:
+				v = 0x00;
+			My_SerialSendStr("No Person\r\n");
+				break;
+			default:
+				break;
+		}
+		ApplTimerStop(&myMsgWaitTimer);
+		myMsgTimeout = 0;
+	}
+	
 	task_in();
 	task_do();
 }
@@ -673,7 +752,7 @@ PCB(mySleepTimerFunc)(void) {
 	BYTE mask;
 	BYTE timeout;
 
-	if (myRfTimeout != 0) {
+	if (myRfTimeout != 0 || myMsgTimeout != 0) {
 		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Failed, has rf Task.\r\n");
 		return;
 	}
@@ -733,6 +812,7 @@ PCB(mySleepTimerFunc)(void) {
 	ZW_DEBUG_SEND_STR(",timeout:");
 	ZW_DEBUG_SEND_NUM(timeout);
 	ZW_DEBUG_SEND_STR("\r\n");
+	My_SerialSendStr("Sleep\r\n");
 }
 
 
@@ -850,7 +930,7 @@ void misc_zw_send_motion() {
 
 	NotificationEventTrigger(&lifelineProfile,
 			suppportedEvents,
-			NULL, 0,
+			&mo, 1,
 			ENDPOINT_ROOT);
   ret = CmdClassNotificationReport(&lifelineProfile, 0x00, notificationType, notificationEvent,misc_zw_send_motion_completed);
 
@@ -1421,3 +1501,111 @@ BYTE AppPowerDownReady() {
 	return TRUE;
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////
+//Serial Poll
+static void SerialPollReset() {
+  sts = S_WAIT_HEAD;
+  len = rlen = flen = sum = 0;
+}
+static BYTE SerialPoll() {	
+		BYTE cnt = MAX_FRAME_LEN;
+		while (ZW_SerialCheck() && cnt > 0) {
+				BYTE b =  ZW_SerialGetByte();
+				cnt--;
+        switch (sts) {
+        case S_WAIT_HEAD:
+          if (b == 0xfe) {
+            sts = S_WAIT_CMD1;
+            frame[flen++] = b;
+          }
+          return 0;
+
+        case S_WAIT_CMD1:
+          frame[flen++] = b;
+          sum ^= b;
+          sts = S_WAIT_CMD2;
+          break;
+          
+        case S_WAIT_CMD2:
+          frame[flen++] = b;
+          sum ^= b;
+          sts = S_WAIT_LEN;
+          break;
+          
+        case S_WAIT_LEN:
+          frame[flen++] = b;
+          sum ^= b;
+          len = b;
+          
+          if (len > MAX_FRAME_LEN) {
+            SerialPollReset();
+          } else {
+            if (len > 0) {
+              sts = S_WAIT_DATA;
+            } else {
+              sts = S_WAIT_CHECK;
+            }
+          }
+          break;
+        case S_WAIT_DATA:
+          frame[flen++] = b;
+          sum ^= b;
+          rlen++;
+          if (rlen == len) {
+            sts = S_WAIT_CHECK;
+          }
+          break;
+        case S_WAIT_CHECK:
+          frame[flen++] = b;
+          if (sum == b) {
+						SerialPollReset();
+						SerialSendFrame(frame[1] | 0x80, 0x55, 0, 0);
+						return 1;
+          }
+          SerialPollReset();
+          break;
+        default:
+          SerialPollReset();
+          break;
+        }
+		}
+		return 0;
+}
+	
+static void SerialSendFrame(BYTE cmd1, BYTE cmd2, BYTE *da, BYTE len) {
+	BYTE sum = 0;
+  BYTE x = 0;
+  BYTE i = 0;
+  
+  x = 0xFE;
+	ZW_SerialPutByte(x);
+	ZW_SerialFlush();
+  
+  x = cmd1;
+	ZW_SerialPutByte(x);
+	ZW_SerialFlush();
+  sum ^= x;
+  
+  x = cmd2;
+	ZW_SerialPutByte(x);
+	ZW_SerialFlush();
+  sum ^= x;
+	
+	x = len;
+	ZW_SerialPutByte(x);
+	ZW_SerialFlush();
+  sum ^= x;
+  
+  for (i = 0; i < len; i++) {
+    x = da[i];
+		ZW_SerialPutByte(x);
+		ZW_SerialFlush();
+    sum ^= x;
+  }
+  
+  x = sum;
+	ZW_SerialPutByte(x);
+	ZW_SerialFlush();
+  sum ^= x;
+}

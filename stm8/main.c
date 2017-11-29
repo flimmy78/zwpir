@@ -27,12 +27,21 @@ enum {
 	E_AWU_TIMEOUT	= 0x04,
 };
 
+enum {
+    MSG_WAKEUP_ZWAVE    = 0x01,
+    MSG_BTN_PRESS       = 0x41,
+    MSG_HAS_PERSON      = 0x42, 
+    MSG_NO_PERSON       = 0X43,
+};
+
 /* Global Variable */
 static u8 state					= S_NO_PERSON;
 static u8 event					= 0;
 static u8 timcnt				= 0;
 static u8 timcnt_has2no	= 0;
-
+static u8 wait_msg_ack                          = 0;
+static u8 wait_rsp_cmd                          = 0;
+static 	int delay_count                         = 1000;   
 #if 0
 #define KEY_GPIO_PORT GPIOC
 #define KEY_GPIO_PIN	GPIO_Pin_4
@@ -196,6 +205,15 @@ static void uart_sendstr(u8 *str) {
 	udelay_0p68(20);
 }
 
+static void uart_send(u8 *data, u8 len) {
+        u8 i = 0; 
+        for (i = 0; i < len; i++) {
+          USART_SendData8(data[i]);
+          while(!USART_GetFlagStatus(USART_FLAG_TXE));
+        }
+	udelay_0p68(20);
+}
+
 
 static void hexPrintf(u8 data)
 {
@@ -226,6 +244,8 @@ static void msg_init() {
 	GPIO_Init(MSG_GPIO_PORT, MSG_GPIO_PIN2, GPIO_Mode_Out_PP_High_Slow);
 	GPIO_Init(WAK_GPIO_PORT, WAK_GPIO_PIN,	GPIO_Mode_Out_PP_High_Slow);
 }
+
+
 static void msg_post(u8 x, u8 y) {
 	//PB6 = x;
 	if (x) {
@@ -233,37 +253,121 @@ static void msg_post(u8 x, u8 y) {
 	} else {
 		GPIO_ResetBits(MSG_GPIO_PORT, MSG_GPIO_PIN1);
 	}
-
 	//PB5 = y;
 	if (y) {
 		GPIO_SetBits(MSG_GPIO_PORT, MSG_GPIO_PIN2);
 	} else {
 		GPIO_ResetBits(MSG_GPIO_PORT, MSG_GPIO_PIN2);
 	}
-	
-	//PB7 = 0;
-	GPIO_ResetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
-	//mdelay(41);
-	mdelay(23);
-	//PB7 = 1;
-	GPIO_SetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
-
+}
+static void msg_post_done() {
 	GPIO_SetBits(MSG_GPIO_PORT, MSG_GPIO_PIN1);
 	GPIO_SetBits(MSG_GPIO_PORT, MSG_GPIO_PIN2);
 }
-static void msg_post_key() {
-	uart_sendstr("Key Pressed\r\n");
-	msg_post(1, 0);
+static void msg_frame_send(u8 cmd1, u8 cmd2, u8 *msg, u8 len) {
+  u8 sum = 0;
+  u8 x = 0;
+  u8 i = 0;
+  
+  x = 0xFE;
+  uart_send(&x, 1);
+  
+  x = cmd1;
+  uart_send(&x, 1);
+  sum ^= x;
+  
+  x = cmd2;
+  uart_send(&x, 1);
+  sum ^= x;
+  
+  x = len;
+  uart_send(&x, 1);
+  sum ^= x;
+  
+  for (i = 0; i < len; i++) {
+    x = msg[i];
+    uart_send(&x, 1);
+    sum ^= x;
+  }
+  
+   x = sum;
+   uart_send(&x, 1);
+   sum ^= x;
 }
-static void msg_post_pir(u8 pir) {
-	if (pir == 0) {
-		uart_sendstr("NO PERSON\r\n");
-		msg_post(0, 0);
-	} else {
-		uart_sendstr("HAS PERSON\r\n");
-		msg_post(0, 1);
+static void msg_post_msg(u8 cmd1, u8 cmd2, u8 *msg, u8 len) {
+  
+	delay_count = 2000;   
+        wait_msg_ack = 0;
+        wait_rsp_cmd = MSG_WAKEUP_ZWAVE | 0x80;
+        //PB7 = 0;
+	GPIO_ResetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
+	while (delay_count && wait_msg_ack == 0) {
+          mdelay(1);
+          delay_count--;
 	}
+        //PB7 = 1;
+	GPIO_SetBits(WAK_GPIO_PORT, WAK_GPIO_PIN);
+        
+	//udelay_0p68(2);
+        //mdelay(41);
+
+	if (wait_msg_ack == 1) {
+          msg_frame_send(cmd1, cmd2, msg, len);
+	}
+        
+        
+        
+	delay_count = 1000;   
+        wait_msg_ack = 0;
+        wait_rsp_cmd = cmd1 | 0x80;
+	while (delay_count && wait_msg_ack == 0) {
+          mdelay(1);
+          delay_count--;
+	}
+        
+        if (wait_msg_ack == 1) {
+          //send ok
+        } else {
+          //send failed
+        }
 }
+
+static void msg_post_key() {
+#if 0
+	msg_post(1, 0);
+	msg_wakeup();
+	msg_delay();
+	uart_sendstr("Key Pressed\r\n");
+	msg_post_done();
+#else
+	msg_post_msg(0x41, 0x55, 0, 0);
+#endif
+}
+
+static void msg_post_pir(u8 pir) {
+#if 0
+	if (pir == 0) {
+		msg_post(0, 0);
+		msg_wakeup();
+		msg_delay();
+		uart_sendstr("NO PERSON\r\n");
+		msg_post_done();
+	} else {
+		msg_post(0, 1);
+		msg_wakeup();
+		msg_delay();
+		uart_sendstr("HAS PERSON\r\n");
+		msg_post_done();
+	}
+#else
+	if (pir == 0) {
+          msg_post_msg(0x42, 0x55, 0, 0);
+	} else {
+          msg_post_msg(0x43, 0x55, 0, 0);
+	}
+#endif
+}
+
 
 
 /* test */
@@ -331,7 +435,8 @@ int main() {
 #if QUICK_TEST
 		test_msg_led(1);
 #endif
-		disable_int();
+		//disable_int();
+                enable_int();
 		AWU_IdleModeEnable();
 		uart_init(BUAD);
 
@@ -432,7 +537,85 @@ INTERRUPT_HANDLER(AWU_IRQHandler,4) {				/* awu */
 	AWU_IdleModeEnable();
 }
 
+/* FE CMD1 CMD2 LEN DATA CHK */
+enum {
+  S_WAIT_HEAD,
+  S_WAIT_CMD1,
+  S_WAIT_CMD2,
+  S_WAIT_LEN,
+  S_WAIT_DATA,
+  S_WAIT_CHECK,
+};
+#define MAX_FRAME_LEN 128
+static u8 frame[MAX_FRAME_LEN - 5];
+static u8 sts = 0;
+static u8 flen = 0;
+static u8 len = 0;
+static u8 rlen = 0;
+static u8 sum = 0;
+static void state_reset() {
+  sts = S_WAIT_HEAD;
+  len = rlen = flen = sum = 0;
+}
 INTERRUPT_HANDLER(USART_RX_IRQHandler, 28) {	/* tx */
+        char b;
 	USART_ClearITPendingBit ();
-	USART_SendData8 (USART_ReceiveData8());
+        b = USART_ReceiveData8();
+        
+        switch (sts) {
+        case S_WAIT_HEAD:
+          if (b == 0xfe) {
+            sts = S_WAIT_CMD1;
+            frame[flen++] = b;
+          }
+          break;
+
+        case S_WAIT_CMD1:
+          frame[flen++] = b;
+          sum ^= b;
+          sts = S_WAIT_CMD2;
+          break;
+          
+        case S_WAIT_CMD2:
+          frame[flen++] = b;
+          sum ^= b;
+          sts = S_WAIT_LEN;
+          break;
+          
+        case S_WAIT_LEN:
+          frame[flen++] = b;
+          sum ^= b;
+          len = b;
+          
+          if (len > MAX_FRAME_LEN) {
+            state_reset();
+          } else {
+            if (len > 0) {
+              sts = S_WAIT_DATA;
+            } else {
+              sts = S_WAIT_CHECK;
+            }
+          }
+          break;
+        case S_WAIT_DATA:
+          frame[flen++] = b;
+          sum ^= b;
+          rlen++;
+          if (rlen == len) {
+            sts = S_WAIT_CHECK;
+          }
+          break;
+        case S_WAIT_CHECK:
+          frame[flen++] = b;
+          if (sum == b) {
+            if (frame[1] == (wait_rsp_cmd | 0x80)) {
+              wait_msg_ack = 1;
+            }
+          }
+          state_reset();
+          break;
+        default:
+          state_reset();
+          break;
+        }
 }
