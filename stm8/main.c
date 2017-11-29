@@ -9,12 +9,12 @@
 #define RPT_TIMEOUT										((15*60)/15)
 #define HAS_PERSON_TO_NO_PERSON_TIME	((2*60)/15)
 #else
-#define AWU_TIMEOUT_SEC								(30)
+#define AWU_TIMEOUT_SEC								(60)
 #define RPT_TIMEOUT										(15*60)
 #define HAS_PERSON_TO_NO_PERSON_TIME	(2*60)
 #endif
 
-#define BUAD	115200
+#define BUAD	        115200
 
 /* Enum */
 enum  {
@@ -107,11 +107,34 @@ static void sleep_init() {
 	AWU_LSICalibrationConfig(fmaster);
 
 }
+
+static void AWU_Init_60s(void)
+{
+  
+  /* Enable the AWU peripheral */
+  AWU->CSR |= AWU_CSR_AWUEN;
+  
+  /* Set the TimeBase */
+  AWU->TBR &= (uint8_t)(~AWU_TBR_AWUTB);
+  AWU->TBR |= 0x0f;
+
+  /* Set the APR divider */
+  AWU->APR &= (uint8_t)(~AWU_APR_APR);
+  AWU->APR |= 32;
+
+}
+
+static void sleep_60s()
+{
+    AWU_Init_60s();
+    AWU_Cmd(ENABLE);
+	halt();
+}
 static void sleep(AWU_Timebase_TypeDef ms) {
 
-  AWU_Init(ms);
+    AWU_Init(ms);
 
-  AWU_Cmd(ENABLE);
+    AWU_Cmd(ENABLE);
 
 	halt();
 }
@@ -120,6 +143,7 @@ static void sleep(AWU_Timebase_TypeDef ms) {
 static void enable_int() {
 	enableInterrupts();
 }
+
 static void disable_int() {
 	disableInterrupts();
 }
@@ -154,8 +178,8 @@ static u8 key_get() {
 /* uart */
 static void uart_init(uint32_t buad) {
 	CLK_PeripheralClockConfig (CLK_Peripheral_USART,ENABLE); //enable ext clock
-  GPIO_Init(GPIOC,GPIO_Pin_3,GPIO_Mode_Out_PP_High_Fast);
-  GPIO_Init(GPIOC,GPIO_Pin_2,GPIO_Mode_In_PU_No_IT);
+    GPIO_Init(GPIOC,GPIO_Pin_3,GPIO_Mode_Out_PP_High_Fast);
+    GPIO_Init(GPIOC,GPIO_Pin_2,GPIO_Mode_In_PU_No_IT);
 	USART_Init(buad,USART_WordLength_8D,USART_StopBits_1,USART_Parity_No,USART_Mode_Tx|USART_Mode_Rx);
 	USART_ITConfig (USART_IT_RXNE,ENABLE);
 	USART_Cmd (ENABLE);
@@ -170,6 +194,30 @@ static void uart_sendstr(u8 *str) {
 		str++;
 	}
 	udelay_0p68(20);
+}
+
+
+static void hexPrintf(u8 data)
+{
+    u8 hex[2];
+    u8 sendStr[3];
+    u8 i;
+    
+    hex[0] = (data >> 4) & 0x0f;
+    hex[1] = data & 0x0f;
+    for (i = 0;i < 2;i++)
+    {
+        if (hex[i] < 10)
+        {
+          sendStr[i] = '0' + hex[i]; 
+        }
+        else
+        {
+            sendStr[i] = 'a' + hex[i] - 10;
+        }
+    }
+    sendStr[2] = 0;
+    uart_sendstr(sendStr);
 }
 
 /* post msg */
@@ -283,14 +331,20 @@ int main() {
 #if QUICK_TEST
 		test_msg_led(1);
 #endif
-
 		disable_int();
 		AWU_IdleModeEnable();
 		uart_init(BUAD);
 
 		if (event & E_KEY) {
+            
 			msg_post_key();
 			event &= ~E_KEY;
+#if QUICK_TEST
+            uart_sendstr("0x");
+            hexPrintf(AWU->APR & 0x3f);
+            uart_sendstr("\r\n");
+            test_msg_led(1);
+#endif
 		}
 
 		switch (state) {
@@ -302,9 +356,8 @@ int main() {
 
 					timcnt = 0;
 					timcnt_has2no = 0;
-					break;
 				}
-				if (event & E_AWU_TIMEOUT) {
+				else if (event & E_AWU_TIMEOUT) {
 					timcnt++;
 					if (timcnt * AWU_TIMEOUT_SEC >= RPT_TIMEOUT) {
 						flag = 1;
@@ -353,7 +406,7 @@ int main() {
 		test_msg_led(0);
 		sleep(AWU_Timebase_2s);
 #else
-		sleep(AWU_Timebase_30s);
+        sleep_60s();
 #endif
 	}
 }
