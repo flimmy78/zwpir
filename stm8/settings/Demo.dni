@@ -9,7 +9,7 @@ TriggerName=main
 LimitSize=0
 ByteLimit=50
 [DebugChecksum]
-Checksum=1119668946
+Checksum=1968737138
 [CallStack]
 ShowArgs=0
 [Disassembly]
@@ -41,6 +41,11 @@ ActionState=1
 [Trace1]
 Enabled=0
 ShowSource=1
+[DataSample]
+LogEnabled=0
+GraphEnabled=0
+ShowTimeLog=1
+ShowTimeSum=1
 [Log file]
 LoggingEnabled=_ 0
 LogFile=_ ""
