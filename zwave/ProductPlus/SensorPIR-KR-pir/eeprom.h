@@ -64,7 +64,7 @@ typedef struct s_nvmApplDescriptor_
 #ifdef SECURITY
   EEOFFS_NETWORK_SECURITY_STRUCT  EEOFFS_SECURITY;
 #endif
-	BYTE	RfFailCnt;	
+	BYTE	RfFailCnt;
 } t_nvmApplDescriptor;
 
 extern t_nvmApplDescriptor far nvmApplDescriptor;

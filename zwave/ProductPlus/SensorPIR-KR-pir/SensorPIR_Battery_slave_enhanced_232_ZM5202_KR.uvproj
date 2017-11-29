@@ -7,7 +7,7 @@
 
   <Targets>
     <Target>
-      <TargetName>SensorPIR_Battery_slave_enhanced_232_ZW050x_EU</TargetName>
+      <TargetName>SensorPIR_Battery_slave_enhanced_232_ZM5202_KR</TargetName>
       <ToolsetNumber>0x0</ToolsetNumber>
       <ToolsetName>MCS-51</ToolsetName>
       <TargetOption>
@@ -44,14 +44,14 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>.\build_prj\SensorPIR_Battery_slave_enhanced_232_ZW050x_EU\Rels\</OutputDirectory>
-          <OutputName>SensorPIR_Battery_slave_enhanced_232_ZW050x_EU.aof</OutputName>
+          <OutputDirectory>.\build_prj\SensorPIR_Battery_slave_enhanced_232_ZM5202_KR\Rels\</OutputDirectory>
+          <OutputName>SensorPIR_Battery_slave_enhanced_232_ZM5202_KR.aof</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
           <CreateHexFile>1</CreateHexFile>
           <DebugInformation>1</DebugInformation>
           <BrowseInformation>1</BrowseInformation>
-          <ListingPath>.\build_prj\SensorPIR_Battery_slave_enhanced_232_ZW050x_EU\list\</ListingPath>
+          <ListingPath>.\build_prj\SensorPIR_Battery_slave_enhanced_232_ZM5202_KR\list\</ListingPath>
           <HexFormatSelection>1</HexFormatSelection>
           <Merge32K>1</Merge32K>
           <CreateBatchFile>0</CreateBatchFile>
@@ -78,7 +78,7 @@
           <AfterMake>
             <RunUserProg1>1</RunUserProg1>
             <RunUserProg2>0</RunUserProg2>
-            <UserProg1Name>cmd /c %%TOOLSDIR%%\uVisionProjectGenerator\MakePatch.bat ZW050X APP SensorPIR_Battery_slave_enhanced_232_ZW050x_EU</UserProg1Name>
+            <UserProg1Name>cmd /c %%TOOLSDIR%%\uVisionProjectGenerator\MakePatch.bat ZW050X APP SensorPIR_Battery_slave_enhanced_232_ZM5202_KR</UserProg1Name>
             <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
@@ -309,9 +309,9 @@
             <InterruptVectorAddress>6144</InterruptVectorAddress>
             <VariousControls>
               <MiscControls>DB OE NOCO SB LC CD</MiscControls>
-              <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A,ZW_DEBUG_SENSORPIR,ZW_DEBUG_UART0</Define>
-              <Undefine></Undefine>
-              <IncludePath>..\..\Z-WAVE\INCLUDE;..\..\Z-WAVE\IO_DEFINES;.\BUILD_PRJ;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZW050X_EU\RELS;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZW050X_EU;C:\KEIL_V5\C51\INC;..\APPLICATIONUTILITIES;..\APPLICATIONCOMMANDHANDLERS;..\..\ZLIB\CMDCLASS;..\..\ZLIB\DEVTYPES;..\..\ZLIB\HANDLER</IncludePath>
+              <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
+              <Undefine> </Undefine>
+              <IncludePath>..\..\Z-WAVE\INCLUDE;..\..\Z-WAVE\IO_DEFINES;.\BUILD_PRJ;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZM5202_KR\RELS;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZM5202_KR;C:\KEIL_V5\C51\INC;..\APPLICATIONUTILITIES;..\APPLICATIONCOMMANDHANDLERS;..\..\ZLIB\CMDCLASS;..\..\ZLIB\DEVTYPES;..\..\ZLIB\HANDLER</IncludePath>
             </VariousControls>
           </C51>
           <Ax51>
@@ -323,7 +323,7 @@
               <MiscControls> </MiscControls>
               <Define> </Define>
               <Undefine> </Undefine>
-              <IncludePath>..\..\Z-WAVE\INCLUDE;..\..\Z-WAVE\IO_DEFINES;.\BUILD_PRJ;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZW050X_EU\RELS;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZW050X_EU;C:\KEIL_V5\C51\INC;..\APPLICATIONUTILITIES;..\APPLICATIONCOMMANDHANDLERS;..\..\ZLIB\CMDCLASS;..\..\ZLIB\DEVTYPES;..\..\ZLIB\HANDLER</IncludePath>
+              <IncludePath>..\..\Z-WAVE\INCLUDE;..\..\Z-WAVE\IO_DEFINES;.\BUILD_PRJ;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZM5202_KR\RELS;.\BUILD_PRJ\SENSORPIR_BATTERY_SLAVE_ENHANCED_232_ZM5202_KR;C:\KEIL_V5\C51\INC;..\APPLICATIONUTILITIES;..\APPLICATIONCOMMANDHANDLERS;..\..\ZLIB\CMDCLASS;..\..\ZLIB\DEVTYPES;..\..\ZLIB\HANDLER</IncludePath>
             </VariousControls>
           </Ax51>
           <Lx51>
@@ -417,9 +417,34 @@
           </GroupOption>
           <Files>
             <File>
-              <FileName>ZW_slave_enhanced_232_ZW050x.lib</FileName>
+              <FileName>ZW_generic_p0_4_spi1_if.obj</FileName>
+              <FileType>3</FileType>
+              <FilePath>..\..\Z-WAVE\LIB\EXT_NVM\ZW_GENERIC_P0_4_SPI1_IF.OBJ</FilePath>
+              <FileOption>
+                <CommonProperty>
+                  <UseCPPCompiler>0</UseCPPCompiler>
+                  <RVCTCodeConst>0</RVCTCodeConst>
+                  <RVCTZI>0</RVCTZI>
+                  <RVCTOtherData>0</RVCTOtherData>
+                  <ModuleSelection>0</ModuleSelection>
+                  <IncludeInBuild>1</IncludeInBuild>
+                  <AlwaysBuild>2</AlwaysBuild>
+                  <GenerateAssemblyFile>2</GenerateAssemblyFile>
+                  <AssembleAssemblyFile>2</AssembleAssemblyFile>
+                  <PublicsOnly>2</PublicsOnly>
+                  <StopOnExitCode>0</StopOnExitCode>
+                  <CustomArgument></CustomArgument>
+                  <IncludeLibraryModules></IncludeLibraryModules>
+                  <ComprImg>1</ComprImg>
+                  <BankNo>65535</BankNo>
+                </CommonProperty>
+                <File51/>
+              </FileOption>
+            </File>
+            <File>
+              <FileName>ZW_slave_enhanced_232_ZW050x_3CH.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X\ZW_SLAVE_ENHANCED_232_ZW050X.LIB</FilePath>
+              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X_3CH\ZW_SLAVE_ENHANCED_232_ZW050X_3CH.LIB</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>0</UseCPPCompiler>
@@ -500,9 +525,9 @@
           </GroupOption>
           <Files>
             <File>
-              <FileName>ZW_slave_enhanced_232_ZW050x.lib</FileName>
+              <FileName>ZW_slave_enhanced_232_ZW050x_3CH.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X\ZW_SLAVE_ENHANCED_232_ZW050X.LIB</FilePath>
+              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X_3CH\ZW_SLAVE_ENHANCED_232_ZW050X_3CH.LIB</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>0</UseCPPCompiler>
@@ -583,9 +608,9 @@
           </GroupOption>
           <Files>
             <File>
-              <FileName>ZW_slave_enhanced_232_ZW050x.lib</FileName>
+              <FileName>ZW_slave_enhanced_232_ZW050x_3CH.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X\ZW_SLAVE_ENHANCED_232_ZW050X.LIB</FilePath>
+              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X_3CH\ZW_SLAVE_ENHANCED_232_ZW050X_3CH.LIB</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>0</UseCPPCompiler>
@@ -703,7 +728,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -749,7 +774,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -795,7 +820,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -841,7 +866,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -887,7 +912,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -933,7 +958,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -979,7 +1004,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1025,7 +1050,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1071,7 +1096,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1117,7 +1142,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1163,7 +1188,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1209,7 +1234,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1255,7 +1280,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1301,7 +1326,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1347,7 +1372,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1393,7 +1418,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1439,7 +1464,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1485,7 +1510,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1531,7 +1556,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1577,7 +1602,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1623,7 +1648,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1669,7 +1694,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1715,7 +1740,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1761,7 +1786,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1807,7 +1832,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1853,7 +1878,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1899,7 +1924,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1945,7 +1970,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -1991,7 +2016,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -2033,7 +2058,7 @@
                     <UseCase>2</UseCase>
                     <UseMod51>2</UseMod51>
                     <VariousControls>
-                      <MiscControls>DF(ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING,  EU,ZW_LIBRARY=slave_enhanced_232)</MiscControls>
+                      <MiscControls>DF(ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING,  KR,ZW_LIBRARY=slave_enhanced_232)</MiscControls>
                       <Define></Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
@@ -2080,7 +2105,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -2117,7 +2142,7 @@
                     <UseCase>2</UseCase>
                     <UseMod51>2</UseMod51>
                     <VariousControls>
-                      <MiscControls>DF(ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING,  EU,ZW_LIBRARY=slave_enhanced_232)</MiscControls>
+                      <MiscControls>DF(ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING,  KR,ZW_LIBRARY=slave_enhanced_232)</MiscControls>
                       <Define></Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
@@ -2164,7 +2189,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -2210,7 +2235,7 @@
                     <InterruptVectorAddress>0</InterruptVectorAddress>
                     <VariousControls>
                       <MiscControls></MiscControls>
-                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , BANKING, EU , BATTERY, ZDP03A</Define>
+                      <Define>ZW_SLAVE, ZW_SLAVE_32, ZW_SLAVE_ENHANCED_232, ZW_SLAVE_ROUTING, ZW050x, ZW0501, NEW_NODEINFO, ZW_SELF_HEAL , ZW_3CH_SYSTEM , BANKING, KR , BATTERY, ZM5202</Define>
                       <Undefine></Undefine>
                       <IncludePath></IncludePath>
                     </VariousControls>
@@ -2224,9 +2249,9 @@
           <GroupName>Z-Wave Lib (COMMON)</GroupName>
           <Files>
             <File>
-              <FileName>ZW_slave_enhanced_232_ZW050x.lib</FileName>
+              <FileName>ZW_slave_enhanced_232_ZW050x_3CH.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X\ZW_SLAVE_ENHANCED_232_ZW050X.LIB</FilePath>
+              <FilePath>..\..\Z-WAVE\LIB\SLAVE_ENHANCED_232_ZW050X_3CH\ZW_SLAVE_ENHANCED_232_ZW050X_3CH.LIB</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>0</UseCPPCompiler>
@@ -2299,9 +2324,9 @@
               </FileOption>
             </File>
             <File>
-              <FileName>ZW_rf_050x_EU.obj</FileName>
+              <FileName>ZW_rf_050x_KR.obj</FileName>
               <FileType>3</FileType>
-              <FilePath>..\..\Z-WAVE\LIB\RF_FREQ\ZW_RF_050X_EU.OBJ</FilePath>
+              <FilePath>..\..\Z-WAVE\LIB\RF_FREQ\ZW_RF_050X_KR.OBJ</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>0</UseCPPCompiler>
