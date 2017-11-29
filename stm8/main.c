@@ -296,7 +296,7 @@ static void msg_frame_send(u8 cmd1, u8 cmd2, u8 *msg, u8 len) {
 }
 static void msg_post_msg(u8 cmd1, u8 cmd2, u8 *msg, u8 len) {
   
-	delay_count = 2000;   
+	delay_count = 1000;   
         wait_msg_ack = 0;
         wait_rsp_cmd = MSG_WAKEUP_ZWAVE | 0x80;
         //PB7 = 0;

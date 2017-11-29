@@ -348,6 +348,9 @@ static BYTE sum = 0;
 static void SerialPollReset();
 static BYTE SerialPoll();
 static void SerialSendFrame(BYTE cmd1, BYTE cmd2, BYTE *da, BYTE len);
+static void SerialSendStr(BYTE *str);
+static void SerialSendNum(BYTE num);
+static void SerialSendNl();
 /* 
   name        	src       req            				res
   st wake zwave stm8      int1            			(0x01|0x80) 0x55
@@ -361,6 +364,17 @@ static void SerialSendFrame(BYTE cmd1, BYTE cmd2, BYTE *da, BYTE len);
 
 
 static BYTE suppportedEvents = NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION;
+
+#if 0
+#define MY_DEBUG_SEND_STR(x)			SerialSendStr(x)
+#define MY_DEBUG_SEND_NUM(x)			SerialSendNum(x)
+#define MY_DEBUG_SEND_NL()		SerialSendNl()
+#else 
+#define MY_DEBUG_SEND_STR(x)			
+#define MY_DEBUG_SEND_NUM(x)			
+#define MY_DEBUG_SEND_NL()		
+#endif
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Initilize 
@@ -377,14 +391,6 @@ BYTE  ApplicationInitHW(BYTE bWakeupReason) {
 
 	Transport_OnApplicationInitHW(bWakeupReason);
   return(TRUE);
-}
-
-void My_SerialSendStr(char *str) {
-	while (*str != 0) {
-		ZW_SerialPutByte(*str);
-		ZW_SerialFlush();  
-		str++;
-	}
 }
 
 void misc_msg_wait_timeout() {
@@ -407,7 +413,7 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
   ZW_InitSerialIf(1152);
   ZW_FinishSerialIf();
 	SerialPollReset();
-	//My_SerialSendStr("Wakeup\r\n");
+	//MY_DEBUG_SEND_STR("Wakeup\r\n");
 	SerialSendFrame(0x01|0x80, 0x55, 0, 0);
 	/*
 	ZW_SerialPutByte(0xFE);
@@ -422,10 +428,10 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
 	ZW_SerialFlush();
 	*/
 	
-	ZW_DEBUG_SEND_STR("\r\nWakeup:");
-	ZW_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
-	ZW_DEBUG_SEND_STR("\r\n");
-	ZW_DEBUG_SEND_STR("SoftWare Version "SF_VERSION"\r\n");
+	MY_DEBUG_SEND_STR("\r\nWakeup:");
+	MY_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
+	MY_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("SoftWare Version "SF_VERSION"\r\n");
 
 	ApplTimerInit();
 
@@ -460,22 +466,22 @@ void ApplicationPoll(void) {
 	//	LedToggle(2);
 	//}
 
-	//ZW_DEBUG_SEND_STR("ApplicationPoll\r\n");	
-	//My_SerialSendStr("WakeUp\r\n");
+	//MY_DEBUG_SEND_STR("ApplicationPoll\r\n");	
+	//MY_DEBUG_SEND_STR("WakeUp\r\n");
 	
 	if (SerialPoll()) {
 		switch (frame[1]) {
 			case 0x41:
 				v = 0x02;
-			My_SerialSendStr("Btn Pressed\r\n");
+			MY_DEBUG_SEND_STR("Btn Pressed\r\n");
 				break;
 			case 0x42:
 				v = 0x01;
-			My_SerialSendStr("Has Person\r\n");
+			MY_DEBUG_SEND_STR("Has Person\r\n");
 				break;
 			case 0x43:
 				v = 0x00;
-			My_SerialSendStr("No Person\r\n");
+			MY_DEBUG_SEND_STR("No Person\r\n");
 				break;
 			default:
 				break;
@@ -491,11 +497,11 @@ void ApplicationPoll(void) {
 // Complete More
 void LearnCompleted(BYTE bNodeID) {
 	stTask_t *t = NULL;
-	ZW_DEBUG_SEND_STR("LearnCompleted\r\n");
+	MY_DEBUG_SEND_STR("LearnCompleted\r\n");
 
-  ZW_DEBUG_SEND_STR("Learn complete ");
-  ZW_DEBUG_SEND_NUM(bNodeID);
-  ZW_DEBUG_SEND_NL();
+  MY_DEBUG_SEND_STR("Learn complete ");
+  MY_DEBUG_SEND_NUM(bNodeID);
+  MY_DEBUG_SEND_NL();
 
 	//ApplTimerStop(&myLearnTimer);
 	t = &tasks[TASK_LEARN];
@@ -531,7 +537,7 @@ received_frame_status_t Transport_ApplicationCommandHandlerEx(
 		BYTE cmdLength) {
 	received_frame_status_t frame_status = RECEIVED_FRAME_STATUS_NO_SUPPORT;
 
-	ZW_DEBUG_SEND_STR("Transport_ApplicationCommandHandlerEx\r\n");	
+	MY_DEBUG_SEND_STR("Transport_ApplicationCommandHandlerEx\r\n");	
 
 	switch (pCmd->ZW_Common.cmdClass) {
 		case COMMAND_CLASS_VERSION:
@@ -590,7 +596,7 @@ received_frame_status_t Transport_ApplicationCommandHandlerEx(
 BYTE handleCommandClassVersionAppl(BYTE cmdClass) {
 	BYTE commandClassVersion = UNKNOWN_VERSION;
 
-	ZW_DEBUG_SEND_STR("handleCommandClassVersionAppl\r\n");	
+	MY_DEBUG_SEND_STR("handleCommandClassVersionAppl\r\n");	
 	switch (cmdClass) {
 		case COMMAND_CLASS_VERSION:
 			commandClassVersion = CommandClassVersionVersionGet();
@@ -670,12 +676,12 @@ BYTE handleCommandClassVersionAppl(BYTE cmdClass) {
 
 
 BYTE handleNbrFirmwareVersions(void) {
-	ZW_DEBUG_SEND_STR("handleNbrFirmwareVersions\r\n");	
+	MY_DEBUG_SEND_STR("handleNbrFirmwareVersions\r\n");	
   return 1; 
 }
 
 void handleGetFirmwareVersion( BYTE bFirmwareNumber, VG_VERSION_REPORT_V2_VG* pVariantgroup) {
-	ZW_DEBUG_SEND_STR("handleGetFirmwareVersion\r\n");	
+	MY_DEBUG_SEND_STR("handleGetFirmwareVersion\r\n");	
 
   if(bFirmwareNumber == 0) {
     pVariantgroup->firmwareVersion = APP_VERSION;
@@ -695,12 +701,12 @@ WORD handleFirmWareIdGet( BYTE n) {
 }
 
 void handleBasicSetCommand(  BYTE val, BYTE endpoint ) {
-	ZW_DEBUG_SEND_STR("handleBasicSetCommand\r\n");
+	MY_DEBUG_SEND_STR("handleBasicSetCommand\r\n");
 
 }
 
 BYTE getAppBasicReport(BYTE endpoint) {
-	ZW_DEBUG_SEND_STR("getAppBasicReport\r\n");
+	MY_DEBUG_SEND_STR("getAppBasicReport\r\n");
 
   return 0;
 }
@@ -718,7 +724,7 @@ BYTE getAppBasicReportDuration(BYTE endpoint) {
 
 
 BYTE GetMyNodeID(void) {
-	ZW_DEBUG_SEND_STR("GetMyNodeID\r\n");
+	MY_DEBUG_SEND_STR("GetMyNodeID\r\n");
   return myEnv.NodeID;
 }
 
@@ -753,19 +759,19 @@ PCB(mySleepTimerFunc)(void) {
 	BYTE timeout;
 
 	if (myRfTimeout != 0 || myMsgTimeout != 0) {
-		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Failed, has rf Task.\r\n");
+		//MY_DEBUG_SEND_STR("mySleepTimerFunc Failed, has rf Task.\r\n");
 		return;
 	}
 
 	if (task_get_cnt() > 0 && task_must_wake()) {
 		//has task to do, can do sleep
-		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Failed, Task not permit!\r\n");
+		//MY_DEBUG_SEND_STR("mySleepTimerFunc Failed, Task not permit!\r\n");
 		return;
 	}
 	if (!misc_node_included()) {
 		if (task_has_rf_task()) {
 			//mode = ZW_FREQUENTLY_LISTENING_MODE;
-			//ZW_DEBUG_SEND_STR("mySleepTimerFunc Has Rf task(not include), Can't Sleep\r\n");
+			//MY_DEBUG_SEND_STR("mySleepTimerFunc Has Rf task(not include), Can't Sleep\r\n");
 			return;	/* can't sleep */
 		} else {
 			mode = ZW_STOP_MODE;
@@ -775,7 +781,7 @@ PCB(mySleepTimerFunc)(void) {
 	} else {
 		if (task_has_rf_task()) {
 			//mode = ZW_FREQUENTLY_LISTENING_MODE;
-			//ZW_DEBUG_SEND_STR("mySleepTimerFunc Has Rf task(include), Can't Sleep\r\n");
+			//MY_DEBUG_SEND_STR("mySleepTimerFunc Has Rf task(include), Can't Sleep\r\n");
 			return; /* can't sleep */
 		} else {
 			mode = ZW_WUT_MODE;
@@ -788,13 +794,13 @@ PCB(mySleepTimerFunc)(void) {
 		timeout = 0xff - 1;
 	}
 	if (timeout == 0) {
-		//ZW_DEBUG_SEND_STR("mySleepTimerFunc Timeout 0, Not Sleep\r\n");
+		//MY_DEBUG_SEND_STR("mySleepTimerFunc Timeout 0, Not Sleep\r\n");
 		return;
 	}
 
 	ZW_SetWutTimeout(timeout);
 	if (!ZW_SetSleepMode(mode,mask,0)) {
-		//ZW_DEBUG_SEND_STR("sleep failed\r\n");
+		//MY_DEBUG_SEND_STR("sleep failed\r\n");
 		return;
 	} 
 
@@ -803,16 +809,16 @@ PCB(mySleepTimerFunc)(void) {
 	//LedOn(2);
 
 
-	ZW_DEBUG_SEND_STR("Go to sleep with mode:");
-	//ZW_DEBUG_SEND_NUM(mode);
-	ZW_DEBUG_SEND_STR(sleep_mode_str[mode]);
-	ZW_DEBUG_SEND_STR(",mask:");
-	//ZW_DEBUG_SEND_NUM(mask);
-	ZW_DEBUG_SEND_STR(sleep_mask_str[mask]);
-	ZW_DEBUG_SEND_STR(",timeout:");
-	ZW_DEBUG_SEND_NUM(timeout);
-	ZW_DEBUG_SEND_STR("\r\n");
-	My_SerialSendStr("Sleep\r\n");
+	MY_DEBUG_SEND_STR("Go to sleep with mode:");
+	//MY_DEBUG_SEND_NUM(mode);
+	MY_DEBUG_SEND_STR(sleep_mode_str[mode]);
+	MY_DEBUG_SEND_STR(",mask:");
+	//MY_DEBUG_SEND_NUM(mask);
+	MY_DEBUG_SEND_STR(sleep_mask_str[mask]);
+	MY_DEBUG_SEND_STR(",timeout:");
+	MY_DEBUG_SEND_NUM(timeout);
+	MY_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("Sleep\r\n");
 }
 
 
@@ -821,9 +827,9 @@ void misc_zw_setpowerdown_timeout() {
 	myRfTimeout = 0;
 }
 PCB(mySetPowerDownTimeoutWakeUpStateCheck)(BYTE timeout) {
-	ZW_DEBUG_SEND_STR("SetPowerDownTimeoutWakeupStateCheck:");
-	ZW_DEBUG_SEND_NUM(timeout);
-	ZW_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("SetPowerDownTimeoutWakeupStateCheck:");
+	MY_DEBUG_SEND_NUM(timeout);
+	MY_DEBUG_SEND_STR("\r\n");
 
 	ApplTimerStop(&myPowerTimer);
 	if (timeout > 2) {
@@ -846,15 +852,15 @@ void conf_load(void) {
 
 	ZW_NVRGetValue(0, sizeof(NVR_FLASH_STRUCT), &nvs);
 
-	ZW_DEBUG_SEND_STR("Revision:");
-	ZW_DEBUG_SEND_NUM(nvs.bRevision);
-	ZW_DEBUG_SEND_STR(",SAWBandWidth:");
-	ZW_DEBUG_SEND_NUM(nvs.bSAWBandwidth);
-	ZW_DEBUG_SEND_STR(",UUID:");
+	MY_DEBUG_SEND_STR("Revision:");
+	MY_DEBUG_SEND_NUM(nvs.bRevision);
+	MY_DEBUG_SEND_STR(",SAWBandWidth:");
+	MY_DEBUG_SEND_NUM(nvs.bSAWBandwidth);
+	MY_DEBUG_SEND_STR(",UUID:");
 	for (i = 0; i < 8; i++) {
-		ZW_DEBUG_SEND_NUM(nvs.abUUID[i]);
+		MY_DEBUG_SEND_NUM(nvs.abUUID[i]);
 	}
-	ZW_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("\r\n");
 	ManufacturerSpecificDeviceIDInit();
 
 	//MemoryGetBuffer((WORD)&nvmApplDescriptor, &nvmappl, sizeof(nvmappl));
@@ -863,11 +869,11 @@ void conf_load(void) {
 	misc_rf_failcnt_load();
 	misc_nodeid_load();
 
-	ZW_DEBUG_SEND_STR("nodeid:");
-	ZW_DEBUG_SEND_NUM(myEnv.NodeID);
-	ZW_DEBUG_SEND_STR(",RfFailCnt:");
-	ZW_DEBUG_SEND_NUM(myEnv.RfFailCnt);
-	ZW_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("nodeid:");
+	MY_DEBUG_SEND_NUM(myEnv.NodeID);
+	MY_DEBUG_SEND_STR(",RfFailCnt:");
+	MY_DEBUG_SEND_NUM(myEnv.RfFailCnt);
+	MY_DEBUG_SEND_STR("\r\n");
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -912,7 +918,7 @@ void misc_zw_send_motion_completed(BYTE bStatus) {
   /*application do not take care of bStatus!*/
   //AddEvent(EVENT_APP_GET_NODELIST);
 	stTask_t *t = &tasks[TASK_MOTION];
-	ZW_DEBUG_SEND_STR("misc_zw_send_motion_completed\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_motion_completed\r\n");
 	t->status = TS_MOTION_DONE;
 }
 void misc_zw_send_motion() {
@@ -920,13 +926,13 @@ void misc_zw_send_motion() {
 	BYTE notificationEvent	= NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION;
 	JOB_STATUS ret = 0;
 
-	ZW_DEBUG_SEND_STR("misc_zw_send_motion:");
-	ZW_DEBUG_SEND_NUM(mo);
-	ZW_DEBUG_SEND_STR(",");
-	ZW_DEBUG_SEND_NUM(notificationType);
-	ZW_DEBUG_SEND_STR(",");
-	ZW_DEBUG_SEND_NUM(notificationEvent);
-	ZW_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_motion:");
+	MY_DEBUG_SEND_NUM(mo);
+	MY_DEBUG_SEND_STR(",");
+	MY_DEBUG_SEND_NUM(notificationType);
+	MY_DEBUG_SEND_STR(",");
+	MY_DEBUG_SEND_NUM(notificationEvent);
+	MY_DEBUG_SEND_STR("\r\n");
 
 	NotificationEventTrigger(&lifelineProfile,
 			suppportedEvents,
@@ -934,22 +940,22 @@ void misc_zw_send_motion() {
 			ENDPOINT_ROOT);
   ret = CmdClassNotificationReport(&lifelineProfile, 0x00, notificationType, notificationEvent,misc_zw_send_motion_completed);
 
-	ZW_DEBUG_SEND_STR("misc_zw_send_motion ret:");
-	ZW_DEBUG_SEND_NUM(ret);
-	ZW_DEBUG_SEND_STR("\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_motion ret:");
+	MY_DEBUG_SEND_NUM(ret);
+	MY_DEBUG_SEND_STR("\r\n");
 }
 void misc_zw_send_motion_done(char status) {
-	ZW_DEBUG_SEND_STR("misc_zw_send_motion_done\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_motion_done\r\n");
 	ApplTimerStop(&myPowerTimer);
 	myRfTimeout = 0;
 }
 
 void misc_zw_send_battery() {
-	ZW_DEBUG_SEND_STR("misc_zw_send_battery\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_battery\r\n");
 	/* TODO */
 }
 void misc_zw_send_battery_done(char status) {
-	ZW_DEBUG_SEND_STR("misc_zw_send_battery_done\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_send_battery_done\r\n");
 }
 void misc_zw_learn_timeout() {
 	stTask_t *t = &tasks[TASK_LEARN];
@@ -962,15 +968,15 @@ void misc_zw_learn_timeout() {
 	} 
 }
 void misc_zw_learn() {
-	ZW_DEBUG_SEND_STR("misc_zw_learn\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_learn\r\n");
   StartLearnModeNow(LEARN_MODE_INCLUSION);
 
 	//myLearnTimer = ApplTimerStart(misc_zw_learn_timeout, 3, 1);
 }
 void misc_zw_learn_done(char status) {
-	ZW_DEBUG_SEND_STR("misc_zw_learn_done(nodeid:");
-	ZW_DEBUG_SEND_NUM(myEnv.NodeID);
-	ZW_DEBUG_SEND_STR(")\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_learn_done(nodeid:");
+	MY_DEBUG_SEND_NUM(myEnv.NodeID);
+	MY_DEBUG_SEND_STR(")\r\n");
 }
 
 void misc_zw_reset_timeout() {
@@ -984,15 +990,15 @@ void misc_zw_reset_timeout() {
 	} 
 }
 void misc_zw_reset() {
-	ZW_DEBUG_SEND_STR("misc_zw_reset\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_reset\r\n");
   StartLearnModeNow(LEARN_MODE_EXCLUSION);
 
 	//myLearnTimer = ApplTimerStart(misc_zw_reset_timeout, 3, 1);
 }
 void misc_zw_reset_done(char status) {
-	ZW_DEBUG_SEND_STR("misc_zw_reset_done(nodeid:");
-	ZW_DEBUG_SEND_NUM(myEnv.NodeID);
-	ZW_DEBUG_SEND_STR(")\r\n");
+	MY_DEBUG_SEND_STR("misc_zw_reset_done(nodeid:");
+	MY_DEBUG_SEND_NUM(myEnv.NodeID);
+	MY_DEBUG_SEND_STR(")\r\n");
 }
 
 
@@ -1143,9 +1149,9 @@ void task_do() {
 
 		ret = t->func(t);
 		if (ret != 0) {
-			ZW_DEBUG_SEND_STR("task run failed with :");
-			ZW_DEBUG_SEND_NUM(ret);
-			ZW_DEBUG_SEND_STR("\r\n");
+			MY_DEBUG_SEND_STR("task run failed with :");
+			MY_DEBUG_SEND_NUM(ret);
+			MY_DEBUG_SEND_STR("\r\n");
 			continue;
 		}
 
@@ -1171,16 +1177,16 @@ BYTE btn_pressed() {
 
 	/*
 	if (v != 0x03) {
-		ZW_DEBUG_SEND_STR("Btn:");
-		ZW_DEBUG_SEND_NUM(v);
-		ZW_DEBUG_SEND_STR("\r\n");
+		MY_DEBUG_SEND_STR("Btn:");
+		MY_DEBUG_SEND_NUM(v);
+		MY_DEBUG_SEND_STR("\r\n");
 	}
 	*/
 
 	if (v == 0x02) {
-		ZW_DEBUG_SEND_STR("Key Pressed:");
-		ZW_DEBUG_SEND_NUM(v);
-		ZW_DEBUG_SEND_STR("\r\n");
+		MY_DEBUG_SEND_STR("Key Pressed:");
+		MY_DEBUG_SEND_NUM(v);
+		MY_DEBUG_SEND_STR("\r\n");
 		v = 0x03;
 		return !0;
 	}
@@ -1199,15 +1205,15 @@ BYTE btn_pressed() {
 // pir pressed
 BYTE pir_triger() {
 	if (v == 0x00) {
-		ZW_DEBUG_SEND_STR("No Person Signal:");
-		ZW_DEBUG_SEND_NUM(v);
-		ZW_DEBUG_SEND_STR("\r\n");
+		MY_DEBUG_SEND_STR("No Person Signal:");
+		MY_DEBUG_SEND_NUM(v);
+		MY_DEBUG_SEND_STR("\r\n");
 		v = 0x03;
 		return 0x01;
 	} else if (v == 0x01) {
-		ZW_DEBUG_SEND_STR("Has Person Signal:");
-		ZW_DEBUG_SEND_NUM(v);
-		ZW_DEBUG_SEND_STR("\r\n");
+		MY_DEBUG_SEND_STR("Has Person Signal:");
+		MY_DEBUG_SEND_NUM(v);
+		MY_DEBUG_SEND_STR("\r\n");
 		v = 0x03;
 		return 0x02;
 	}
@@ -1248,9 +1254,9 @@ static BYTE check_pir(BYTE *s) {
 		}
 
 		if (!misc_node_included()) {
-			ZW_DEBUG_SEND_STR("Not Inlcuded, Do't deal Motion Signal:");
-			ZW_DEBUG_SEND_NUM(mo);
-			ZW_DEBUG_SEND_STR("\r\n");
+			MY_DEBUG_SEND_STR("Not Inlcuded, Do't deal Motion Signal:");
+			MY_DEBUG_SEND_NUM(mo);
+			MY_DEBUG_SEND_STR("\r\n");
 			return TASK_NONE;
 		}
 
@@ -1272,22 +1278,22 @@ static char func_led(void *arg) {
 	char ret = 0;
 	switch (t->status) {
 		case TS_LED_ON:
-			ZW_DEBUG_SEND_STR("led on\r\n");
+			MY_DEBUG_SEND_STR("led on\r\n");
 			LED_ON(2);
 			t->status = TS_IDLE;
 		break;
 		case TS_LED_OFF:
-			ZW_DEBUG_SEND_STR("led off\r\n");
+			MY_DEBUG_SEND_STR("led off\r\n");
 			LED_OFF(2);
 			t->status = TS_IDLE;
 		break;
 		case TS_LED_TOGGLE:
-			ZW_DEBUG_SEND_STR("led toggle\r\n");
+			MY_DEBUG_SEND_STR("led toggle\r\n");
 			LED_TOGGLE(2);
 			t->status = TS_IDLE;
 		break;
 		case TS_LED_BLINK:
-			ZW_DEBUG_SEND_STR("led blink\r\n");
+			MY_DEBUG_SEND_STR("led blink\r\n");
 			LED_TOGGLE(2);
 		break;
 		case TS_IDLE:
@@ -1494,10 +1500,10 @@ void ApplicationRfNotify(BYTE rfState) {
 void ApplicationTestPoll(void) {
 }
 void ApplicationSlaveUpdate(BYTE bStatus, BYTE bNodeID, BYTE* pCmd, BYTE bLen) {
-	//ZW_DEBUG_SEND_STR("ApplicationSlaveUpdate\r\n");
+	//MY_DEBUG_SEND_STR("ApplicationSlaveUpdate\r\n");
 }
 BYTE AppPowerDownReady() {
-	//ZW_DEBUG_SEND_STR("AppPowerDownReady\r\n");
+	//MY_DEBUG_SEND_STR("AppPowerDownReady\r\n");
 	return TRUE;
 }
 
@@ -1609,3 +1615,35 @@ static void SerialSendFrame(BYTE cmd1, BYTE cmd2, BYTE *da, BYTE len) {
 	ZW_SerialFlush();
   sum ^= x;
 }
+
+static void SerialSendStr(BYTE *str) {
+
+	while (*str != 0) {
+		ZW_SerialPutByte(*str);
+		ZW_SerialFlush();  
+		str++;
+	}
+
+}
+static void SerialSendHex(BYTE h) {
+	if (h >= 0 && h <= 9) {
+		ZW_SerialPutByte(h + '0');
+		ZW_SerialFlush();  
+	} else {
+		ZW_SerialPutByte(h - 10 + 'A');
+		ZW_SerialFlush();  
+	}
+}
+static void SerialSendNum(BYTE num) {
+	BYTE b1 = (num>>4)&0x0f;
+	BYTE b2 = (num>>0)&0x0f;
+	SerialSendHex(b1);
+	SerialSendHex(b2);
+}
+static void SerialSendNl() {
+	ZW_SerialPutByte('\r');
+	ZW_SerialFlush();  
+	ZW_SerialPutByte('\n');
+	ZW_SerialFlush();  
+}
+
