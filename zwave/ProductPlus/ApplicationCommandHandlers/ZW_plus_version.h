@@ -1,22 +1,11 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2013
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Some nice descriptive description.
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2013/09/16 09:30:09 $
-*
-****************************************************************************/
-#ifndef _ZW_plus_version_H_
-#define _ZW_plus_version_H_
+/**
+ * @file
+ * Z-Wave+ Version file.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
+ */
+
+#ifndef _ZW_PLUS_VERSION_H_
+#define _ZW_PLUS_VERSION_H_
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
@@ -43,5 +32,5 @@
 
 
 
-#endif /* _ZW_plus_version_H_ */
+#endif /* _ZW_PLUS_VERSION_H_ */
 

@@ -15,53 +15,52 @@
 #include <ZW_pindefs.h>
 #include <ZW_evaldefs.h>
 #include <ZW_classcmd.h>
-#include <ZW_tx_mutex.h>
+#include <CommandClass.h>
+#include <agi.h>
+#include <battery_monitor.h>
 
 /**
  * Returns the version of this CC.
  */
 #define CommandClassBatteryVersionGet() BATTERY_VERSION
 
-/*==============================   handleCommandClassBattery  ============
-**
-**  Function:  handler for Battery CC
-**
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-extern void 
-handleCommandClassBattery(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-);
-
-/*================= CmdClassBatteryReport =======================
-** Function description
-** This function...
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-JOB_STATUS
-CmdClassBatteryReport(
-  BYTE option,
-  BYTE dstNode,
-  BYTE bBattLevel,                  /* IN What to do*/
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val));
+/**
+ * @brief handleCommandClassBattery
+ * Handler for command class Battery
+ * @param[in] rxOpt receive options of type RECEIVE_OPTIONS_TYPE_EX
+ * @param[in] pCmd Payload from the received frame
+ * @param[in] cmdLength Number of command bytes including the command
+ * @return receive frame status.
+ */
+received_frame_status_t handleCommandClassBattery(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength);
 
 
-/*==============================   BatterySensorRead   ============================
-**
-**  Function:  Required function for the Battery Command clas
-**
-**  This funciton read the Battery volatge from the battery Voltage sensor HW
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-BOOL 
-BatterySensorRead(BYTE *battLvl);
+/**
+ * @brief CmdClassBatteryReport
+ * Send unsolicited battery report
+ * @param[in] pProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
+ * @param[in] bBattLevel report value of type Battery report value
+ * @param[out] pCbFunc callback funtion returning status destination node receive job.
+ * @return status on protocol exuted the job.
+ */
+JOB_STATUS CmdClassBatteryReport(
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
+  BYTE bBattLevel,
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult));
+
+
+/**
+ * @brief BatterySensorRead
+ *  Required function for the Battery Command class. This funciton read the
+ *  Battery voltage from the battery Voltage sensor HW
+ * @param[out] battLvl read battery level
+ * @return if battery has change battery level state (ex. state high to low)
+ */
+extern BOOL BatterySensorRead(BATT_LEVEL *battLvl);
 
 #endif

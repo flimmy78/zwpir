@@ -31,6 +31,20 @@
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
+#ifdef ZW_DEBUG_CCAGI
+#define ZW_DEBUG_CCAGI_SEND_BYTE(data)      ZW_DEBUG_SEND_BYTE(data)
+#define ZW_DEBUG_CCAGI_SEND_STR(STR)        ZW_DEBUG_SEND_STR(STR)
+#define ZW_DEBUG_CCAGI_SEND_NUM(data)       ZW_DEBUG_SEND_NUM(data)
+#define ZW_DEBUG_CCAGI_SEND_WORD_NUM(data)  ZW_DEBUG_SEND_WORD_NUM(data)
+#define ZW_DEBUG_CCAGI_SEND_NL()            ZW_DEBUG_SEND_NL()
+#else
+#define ZW_DEBUG_CCAGI_SEND_BYTE(data)
+#define ZW_DEBUG_CCAGI_SEND_STR(STR)
+#define ZW_DEBUG_CCAGI_SEND_NUM(data)
+#define ZW_DEBUG_CCAGI_SEND_WORD_NUM(data)
+#define ZW_DEBUG_CCAGI_SEND_NL()
+#endif
+
 #define REPORT_ONE_GROUP 1
 #define REPORT_ALL_GROUPS 2
 /****************************************************************************/
@@ -38,35 +52,45 @@
 /****************************************************************************/
 ZW_APPLICATION_TX_BUFFER *pTxBuf = NULL;
 static BYTE currentGroupId;
+static BYTE associationGroupInfoGetEndpoint = 0;
 static BYTE grInfoStatus = FALSE;
-static BYTE bSourceNodeID;
-static BYTE txOptions;
+static RECEIVE_OPTIONS_TYPE_EX rxOptionsEx;
+
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 void ZCB_AGIReport(BYTE txStatus);
 void ZCB_AGIReportSendTimer(void);
+
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
-void SendAssoGroupInfoReport(void)
+void SendAssoGroupInfoReport(RECEIVE_OPTIONS_TYPE_EX *rxOpt)
 {
+  ZW_DEBUG_CCAGI_SEND_NL();
+  ZW_DEBUG_CCAGI_SEND_STR("SendAssoGroupInfoReport");
+  ZW_DEBUG_CCAGI_SEND_NUM(currentGroupId);
+
     pTxBuf = GetResponseBufferCb(ZCB_AGIReport);
+    //pTxBuf = GetRequestBuffer(ZCB_AGIReport);
     /*Check pTxBuf is free*/
-    if(NULL != pTxBuf)
+    if( NON_NULL( pTxBuf ) )
     {
+      TRANSMIT_OPTIONS_TYPE_SINGLE_EX *txOptionsEx;
+      RxToTxOptions(rxOpt, &txOptionsEx);
       pTxBuf->ZW_AssociationGroupInfoReport1byteFrame.cmdClass = COMMAND_CLASS_ASSOCIATION_GRP_INFO;
       pTxBuf->ZW_AssociationGroupInfoReport1byteFrame.cmd      = ASSOCIATION_GROUP_INFO_REPORT;
       /*If thelist mode bit is set in the get frame it should be also set in the report frame.*/
       pTxBuf->ZW_AssociationGroupInfoReport1byteFrame.properties1 = (grInfoStatus == REPORT_ALL_GROUPS)? (ASSOCIATION_GROUP_INFO_REPORT_PROPERTIES1_LIST_MODE_BIT_MASK |0x01) : 0x01; /*we send one report per group*/
-      GetApplGroupInfo(currentGroupId, &pTxBuf->ZW_AssociationGroupInfoReport1byteFrame.variantgroup1);
-      if(FALSE == Transport_SendResponse(bSourceNodeID,
-                  pTxBuf,
+      GetApplGroupInfo(currentGroupId, rxOpt->destNode.endpoint, &pTxBuf->ZW_AssociationGroupInfoReport1byteFrame.variantgroup1);
+      if (ZW_TX_IN_PROGRESS != Transport_SendResponseEP( (BYTE *)pTxBuf,
                   sizeof(ZW_ASSOCIATION_GROUP_INFO_REPORT_1BYTE_FRAME),
-                  ZWAVE_PLUS_TX_OPTIONS,
+                  txOptionsEx,
                   ZCB_ResponseJobStatus))
       {
+        ZW_DEBUG_CCAGI_SEND_NL();
+        ZW_DEBUG_CCAGI_SEND_STR("TX error");
         /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
         FreeResponseBuffer();
         grInfoStatus = FALSE;
@@ -74,21 +98,29 @@ void SendAssoGroupInfoReport(void)
       }
     }
 }
+
+
 /*
 Use this timer to delay the sending of the next AGI report after the mutex is released
 Since we cannot get a new tx buffer in the call back because the mutex is reserved
 */
 PCB(ZCB_AGIReportSendTimer)(void)
 {
-  SendAssoGroupInfoReport();
+  SendAssoGroupInfoReport(&rxOptionsEx);
 }
+
+
 /*The AGI report call back we will send a report per association group
   if we seed to send AGI fro all the groups*/
 PCB(ZCB_AGIReport)(BYTE txStatus)
 {
+  UNUSED(txStatus);
+  ZW_DEBUG_CCAGI_SEND_NL();
+  ZW_DEBUG_CCAGI_SEND_STR("ZCB_AGIReport");
+  ZW_DEBUG_CCAGI_SEND_NUM(grInfoStatus);
   if (grInfoStatus == REPORT_ALL_GROUPS)
   {
-    if (currentGroupId++ < GetApplAssoGroupsSize())
+    if (currentGroupId++ < GetApplAssoGroupsSize(associationGroupInfoGetEndpoint))
     {
       TimerStart(ZCB_AGIReportSendTimer, 1, 1);
       return;
@@ -97,58 +129,83 @@ PCB(ZCB_AGIReport)(BYTE txStatus)
   grInfoStatus = FALSE;
 }
 
-void
+received_frame_status_t
 handleCommandClassAssociationGroupInfo(
-    BYTE option,
-    BYTE sourceNode,
-    ZW_APPLICATION_TX_BUFFER *pCmd,
-    BYTE cmdLength)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  uint8_t cmdLength)
 {
   BYTE length;
-  BYTE groupId;
+  BYTE groupID;
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX *txOptionsEx;
+  uint8_t groupNameLength;
+  UNUSED(cmdLength);
   switch (pCmd->ZW_Common.cmd)
   {
     case ASSOCIATION_GROUP_NAME_GET:
-      if (0 == pCmd->ZW_AssociationGroupNameGetFrame.groupingIdentifier)
-      {
-        pCmd->ZW_AssociationGroupNameGetFrame.groupingIdentifier = 1;
-      }
-      length = GetApplGroupNameLength(pCmd->ZW_AssociationGroupNameGetFrame.groupingIdentifier);
-      if (length != 0)
-      {
-        pTxBuf = GetResponseBuffer();
-        /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
-        {
-          pTxBuf->ZW_AssociationGroupNameReport1byteFrame.cmdClass = COMMAND_CLASS_ASSOCIATION_GRP_INFO;
-          pTxBuf->ZW_AssociationGroupNameReport1byteFrame.cmd      = ASSOCIATION_GROUP_NAME_REPORT;
-          groupId = pCmd->ZW_AssociationGroupNameGetFrame.groupingIdentifier;
-          pTxBuf->ZW_AssociationGroupNameReport1byteFrame.groupingIdentifier =  groupId;
 
-
-          pTxBuf->ZW_AssociationGroupNameReport1byteFrame.lengthOfName = length;
-          GetApplGroupName(&(pTxBuf->ZW_AssociationGroupNameReport1byteFrame.name1), groupId);
-          if(FALSE == Transport_SendResponse(sourceNode,
-                      pTxBuf,
-                      sizeof(ZW_ASSOCIATION_GROUP_NAME_REPORT_1BYTE_FRAME)
-                      - sizeof(BYTE)
-                      + length,
-                      option,
-                      ZCB_ResponseJobStatus))
-          {
-            /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-            FreeResponseBuffer();
-          }
-        }
+      if (TRUE == Check_not_legal_response_job(rxOpt))
+      {
+        // Get/Report do not support bit addressing.
+        return RECEIVED_FRAME_STATUS_FAIL;
       }
+
+      pTxBuf = GetResponseBuffer();
+      if (IS_NULL(pTxBuf))
+      {
+        // The buffer is not free :(
+        return RECEIVED_FRAME_STATUS_FAIL;
+      }
+
+      if (3 != cmdLength)
+      {
+        return RECEIVED_FRAME_STATUS_FAIL;
+      }
+
+      pTxBuf->ZW_AssociationGroupNameReport1byteFrame.cmdClass = COMMAND_CLASS_ASSOCIATION_GRP_INFO;
+      pTxBuf->ZW_AssociationGroupNameReport1byteFrame.cmd      = ASSOCIATION_GROUP_NAME_REPORT;
+
+      groupID = pCmd->ZW_AssociationGroupNameGetFrame.groupingIdentifier;
+      pTxBuf->ZW_AssociationGroupNameReport1byteFrame.groupingIdentifier = groupID;
+
+      groupNameLength = GetApplGroupName(
+          (char *)&(pTxBuf->ZW_AssociationGroupNameReport1byteFrame.name1),
+          groupID,
+          rxOpt->destNode.endpoint);
+
+      pTxBuf->ZW_AssociationGroupNameReport1byteFrame.lengthOfName = groupNameLength;
+
+      RxToTxOptions(rxOpt, &txOptionsEx);
+      if (ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
+          (BYTE *)pTxBuf,
+          sizeof(ZW_ASSOCIATION_GROUP_NAME_REPORT_1BYTE_FRAME) - sizeof(BYTE) + groupNameLength,
+          txOptionsEx,
+          ZCB_ResponseJobStatus))
+      {
+        /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
+        FreeResponseBuffer();
+      }
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
 
     case ASSOCIATION_GROUP_INFO_GET:
+      ZW_DEBUG_CCAGI_SEND_NL();
+      ZW_DEBUG_CCAGI_SEND_STR("ASSOCIATION_GROUP_INFO_GET");
+      ZW_DEBUG_CCAGI_SEND_NUM(rxOpt->destNode.endpoint);
+
+      if (TRUE == Check_not_legal_response_job(rxOpt))
+      {
+        /*Get/Report do not support endpoint bit-addressing, free transmit-buffer pTxBuf by cleaing mutex */
+        FreeResponseBuffer();
+        return RECEIVED_FRAME_STATUS_FAIL;
+      }
+
       /*if we already sending reports ingore more requestes*/
       if (grInfoStatus)
-        return;
-      txOptions = option;
-      bSourceNodeID = sourceNode;
+      {
+        return RECEIVED_FRAME_STATUS_FAIL;
+      }
+      memcpy((BYTE_P)&rxOptionsEx, (BYTE_P)rxOpt, sizeof(RECEIVE_OPTIONS_TYPE_EX));
       if (pCmd->ZW_AssociationGroupInfoGetFrame.properties1 &
           ASSOCIATION_GROUP_INFO_GET_PROPERTIES1_LIST_MODE_BIT_MASK)
       {
@@ -156,60 +213,71 @@ handleCommandClassAssociationGroupInfo(
          one group at a time*/
          grInfoStatus =REPORT_ALL_GROUPS;
          currentGroupId = 1;
+         associationGroupInfoGetEndpoint = rxOpt->destNode.endpoint;
       }
       else if (pCmd->ZW_AssociationGroupInfoGetFrame.groupingIdentifier)
       {
         /*if list mode is zero and group id is not then report the association group info for the specific group*/
         grInfoStatus = REPORT_ONE_GROUP;
         currentGroupId = pCmd->ZW_AssociationGroupInfoGetFrame.groupingIdentifier;
+        associationGroupInfoGetEndpoint = rxOpt->destNode.endpoint;
       }
       else
       {
         /*the get frame is invalid*/
         grInfoStatus = FALSE;
       }
-      if(grInfoStatus)
+      ZW_DEBUG_CCAGI_SEND_NL();
+      ZW_DEBUG_CCAGI_SEND_STR("grInfoStatus: ");
+      ZW_DEBUG_CCAGI_SEND_NUM(grInfoStatus);
+
+      if (grInfoStatus)
       {
-        SendAssoGroupInfoReport();
+        SendAssoGroupInfoReport(&rxOptionsEx);
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
 
     case ASSOCIATION_GROUP_COMMAND_LIST_GET:
-      groupId = pCmd->ZW_AssociationGroupCommandListGetFrame.groupingIdentifier;
-
-      if (0 == groupId)
+      if(TRUE == Check_not_legal_response_job(rxOpt))
       {
-        groupId = 1;
+        /*Get/Report do not support endpoint bit-addressing, free transmit-buffer pTxBuf by cleaing mutex */
+        FreeResponseBuffer();
+        return RECEIVED_FRAME_STATUS_FAIL;
       }
 
-      length = getApplGroupCommandListSize(groupId);
+      length = GetApplGroupCommandListSize(pCmd->ZW_AssociationGroupCommandListGetFrame.groupingIdentifier, rxOpt->destNode.endpoint);
       if (length != 0)
       {
         pTxBuf = GetResponseBuffer();
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *txOptionsEx;
+          RxToTxOptions(rxOpt, &txOptionsEx);
           pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.cmdClass = COMMAND_CLASS_ASSOCIATION_GRP_INFO;
           pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.cmd      = ASSOCIATION_GROUP_COMMAND_LIST_REPORT;
-          pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.groupingIdentifier = groupId;
+          groupID = pCmd->ZW_AssociationGroupCommandListGetFrame.groupingIdentifier;
+          pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.groupingIdentifier = groupID;
           pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.listLength = length;
-          setApplGroupCommandList(&pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.command1, groupId);
-          if(FALSE == Transport_SendResponse(sourceNode,
-                      pTxBuf,
+          GetApplGroupCommandList(&pTxBuf->ZW_AssociationGroupCommandListReport1byteFrame.command1, groupID, rxOpt->destNode.endpoint);
+
+          if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP( (BYTE *)pTxBuf,
                       sizeof(ZW_ASSOCIATION_GROUP_COMMAND_LIST_REPORT_1BYTE_FRAME)
                       - sizeof(BYTE)
                       + length,
-                      option,
+                      txOptionsEx,
                       ZCB_ResponseJobStatus))
           {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
             FreeResponseBuffer();
           }
         }
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
-      break;
-
-    default:
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }

@@ -1,20 +1,20 @@
-/*************************************************************************** 
-* 
-* Copyright (c) 2001-2011 
-* Sigma Designs, Inc. 
-* All Rights Reserved 
-* 
-*--------------------------------------------------------------------------- 
-* 
+/***************************************************************************
+*
+* Copyright (c) 2001-2011
+* Sigma Designs, Inc.
+* All Rights Reserved
+*
+*---------------------------------------------------------------------------
+*
 * Description: Basic Command Class source file
-* 
-* Author:   
-* 
-* Last Changed By:  $Author:  $ 
-* Revision:         $Revision:  $ 
-* Last Changed:     $Date:  $ 
-* 
-****************************************************************************/ 
+*
+* Author:
+*
+* Last Changed By:  $Author:  $
+* Revision:         $Revision:  $
+* Last Changed:     $Date:  $
+*
+****************************************************************************/
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
@@ -22,10 +22,13 @@
 #include <ZW_basis_api.h>
 #include <ZW_tx_mutex.h>
 #include <ZW_TransportLayer.h>
-
+#include <ZW_TransportEndpoint.h>
+#include <ZW_TransportMulticast.h>
+#include <ZW_transport_api.h>
 #include "config_app.h"
 #include <CommandClassBasic.h>
 #include "misc.h"
+#include <CommandClass.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
@@ -50,130 +53,72 @@
 **  Side effects: None
 **
 **--------------------------------------------------------------------------*/
-void 
+received_frame_status_t
 handleCommandClassBasic(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-  
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt, /* IN receive options of type RECEIVE_OPTIONS_TYPE_EX  */
+  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN  Payload from the received frame */
+  BYTE cmdLength)               /* IN Number of command bytes including the command */
 {
+  UNUSED(cmdLength);
   switch (pCmd->ZW_Common.cmd)
   {
       //Must be ignored to avoid unintentional operation. Cannot be mapped to another command class.
     case BASIC_SET:
-      handleBasicSetCommand(pCmd->ZW_BasicSetFrame.value);
+      handleBasicSetCommand(pCmd->ZW_BasicSetFrame.value, rxOpt->destNode.endpoint);
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
 
     case BASIC_GET:
+      if(FALSE == Check_not_legal_response_job(rxOpt))
       {
         ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
+
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
           /* Controller wants the sensor level */
           pTxBuf->ZW_BasicReportFrame.cmdClass = COMMAND_CLASS_BASIC;
           pTxBuf->ZW_BasicReportFrame.cmd = BASIC_REPORT;
-    
-          pTxBuf->ZW_BasicReportFrame.value =  getAppBasicReport();
-          if(FALSE == Transport_SendResponse(
-              sourceNode,
+
+          pTxBuf->ZW_BasicReportV2Frame.currentValue =  getAppBasicReport(pTxOptionsEx->sourceEndpoint);
+          pTxBuf->ZW_BasicReportV2Frame.targetValue =  getAppBasicReportTarget(pTxOptionsEx->sourceEndpoint);
+          pTxBuf->ZW_BasicReportV2Frame.duration =  getAppBasicReportDuration(pTxOptionsEx->sourceEndpoint);
+          if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
               (BYTE *)pTxBuf,
-              sizeof(ZW_BASIC_REPORT_FRAME),
-              option,
+              sizeof(ZW_BASIC_REPORT_V2_FRAME),
+              pTxOptionsEx,
               ZCB_ResponseJobStatus))
           {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-            FreeResponseBuffer();          
+            FreeResponseBuffer();
           }
+          return RECEIVED_FRAME_STATUS_SUCCESS;
         }
-      }  
-      break;
-
-    default:
+      }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
-
-/*================= CmdClassBasicSetSend =======================
-** Function description
-** This function...
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-JOB_STATUS
-CmdClassBasicSetSend(
-  BYTE option,
-  BYTE dstNode,
-  BYTE bValue,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
-{
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
-  if(NULL == pTxBuf)
-  {
-    /*Ongoing job is active.. just stop current job*/
-    return JOB_STATUS_BUSY;
-  }
- 
-  pTxBuf->ZW_BasicSetFrame.cmdClass = COMMAND_CLASS_BASIC;
-  pTxBuf->ZW_BasicSetFrame.cmd = BASIC_SET;
-  pTxBuf->ZW_BasicSetFrame.value =  bValue;
-
-  if(FALSE == Transport_SendRequest(
-      dstNode,
-      (BYTE *)pTxBuf,
-      sizeof(ZW_BASIC_SET_FRAME),
-      option,
-      ZCB_RequestJobStatus,
-      FALSE))
-  {
-    /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-     FreeRequestBuffer();
-     return JOB_STATUS_BUSY;
-  }
-  return JOB_STATUS_SUCCESS;
-}
-
-/*================= CmdClassBasicReportSend =======================
-** Function description
-** This function...
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
 JOB_STATUS
 CmdClassBasicReportSend(
-  BYTE option,
-  BYTE dstNode,
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
   BYTE bValue,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult))
 {
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
-  if(NULL == pTxBuf)
-  {
-    /*Ongoing job is active.. just stop current job*/
-    return JOB_STATUS_BUSY;
-  }
- 
-  pTxBuf->ZW_BasicReportFrame.cmdClass = COMMAND_CLASS_BASIC;
-  pTxBuf->ZW_BasicReportFrame.cmd = BASIC_REPORT;
-  pTxBuf->ZW_BasicReportFrame.value =  bValue;
+  CMD_CLASS_GRP cmdGrp = {COMMAND_CLASS_BASIC, BASIC_REPORT};
 
-  if(FALSE == Transport_SendRequest(
-      dstNode,
-      (BYTE *)pTxBuf,
-      sizeof(ZW_BASIC_REPORT_FRAME),
-      option,
-      ZCB_RequestJobStatus,
-      FALSE))
-  {
-    /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-     FreeRequestBuffer();
-     return JOB_STATUS_BUSY;
-  }
-  return JOB_STATUS_SUCCESS;
+  return cc_engine_multicast_request(
+      pProfile,
+      sourceEndpoint,
+      &cmdGrp,
+      &bValue,
+      1,
+      TRUE,
+      pCbFunc);
 }
+

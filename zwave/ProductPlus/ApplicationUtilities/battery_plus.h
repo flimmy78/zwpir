@@ -1,24 +1,8 @@
-/***************************************************************************
-*
- * @author Christian Salmony Olsen
-* Copyright (c) 2001-2013
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Implements functions that make is easier to support
-*              Battery Operated Nodes
-*        All far variables (NVM offsets) should be defined in the application's eeprom.c module
-*        in the struct t_nvmApplDescriptor
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2013/06/25 14:44:03 $
-*
-****************************************************************************/
+/**
+ * @file
+ * Handling of power functionality and helper module for the Wake Up CC.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
+ */
 #ifndef _BATTERY_PLUS_H_
 #define _BATTERY_PLUS_H_
 
@@ -32,6 +16,35 @@
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
+
+/**
+ * PowerDownTimeout determines the number of seconds the sensor is kept alive
+ * between powerdowns. The default is one second, which is probably too little
+ * if you are routing in your network. ZWave+ defined: go to sleep > 10 SDS11846-2.doc
+ */
+#define DEFAULT_POWERDOWNTIMEOUT    11
+
+/**
+ * KeepAliveTimeout determines the number of seconds the sensor is kept alive
+ * when the button is activated for more than KEEPALIVEACTIVATEPERIOD seconds.
+ * This can be used when installing the sensor in a network. Default keepalive
+ * is 30 seconds.
+ */
+#define DEFAULT_KEEPALIVETIMEOUT   30
+
+/**
+ * Press and hold button for this period of time to enter keepalive mode
+ * Default is 3 seconds.
+ */
+#define DEFAULT_KEEPALIVEACTIVATETIMEOUT  3
+
+/**
+ * WAKEUPCOUNT holds the number of times WUT has been activated. The value is stored
+ * in EEPROM and is used to determine when to send a Wakeup Information frame.
+ * Default is 5 which means that when the sensor has been woken 5 times it will send
+ * a Wakeup Information frame.
+ */
+#define DEFAULT_WAKEUPCOUNT 5
 
 /**
  * Seconds in minutes
@@ -76,20 +89,10 @@ typedef enum _BATT_MODE_
 /****************************************************************************/
 
 /**
- * @brief SetDefaultBatteryConfiguration
- * Set default sleep periode for device.
- * @param sleep period for device to sleep.
- */
-void
-SetDefaultBatteryConfiguration(DWORD sleep);
-
-/**
- * @brief LoadBatteryConfiguration
- * Load battery parameters from NVM.
+ * @brief Loads battery parameters from NVM.
  */
 void
 LoadBatteryConfiguration(void);
-
 
 /**
  * @brief Count down wakeUp counter and call PowerDownNow() if going to sleep.
@@ -123,31 +126,20 @@ PowerDownNow(void);
 
 /**
  * @brief Sets the power down timeout value.
- * @param[in] Timeout value [0;255] represents [0;25500] ms in steps of 100 ms.
+ * @param[in] timeout value [0;255] represents [0;25500] ms in steps of 100 ms.
  */
 void
 ZCB_SetPowerDownTimeout(
     BYTE timeout);
 
 /**
- * @brief This function set the powerdown timer delay time. The timer resolution
- * is 1 sec. The value specifiy the time the device will stay wake before it
- * goes to powerdown state. Timeout is minimum 10 seconds if Command Class
- * WakeUp State is active.
- * @param[in] timeout parameter in seconds
+ * @brief Sets the power down timeout value and verify CommandClass Wake-up is active. If WakeUp is active
+ * the minimum timeout is 10 seconds!
+ * @param[in]  timeout value [0;255] represents [0;25500] ms in steps of 100 ms.
  */
 void
 ZCB_SetPowerDownTimeoutWakeUpStateCheck(
     BYTE timeout);
-
-
-/**
- * @brief WakeUpStateSet
- * Tell battery module that WakeUpNotification mode is active and sleep time should
- * be increased to 10 seconds.
- * @param active parameter is used to active WakeUp-state. TRUE active and FALSE inactive.
- */
-void ZCB_WakeUpStateSet(BYTE active);
 
 /**
  * @brief Called to check whether the application is ready to power down. Must be implemented by
@@ -156,14 +148,6 @@ void ZCB_WakeUpStateSet(BYTE active);
  */
 extern BYTE
 AppPowerDownReady(void);
-
-/**
- * @brief Handler for Wake Up Interval Get Command.
- * @return The current wake up interval.
- */
-DWORD
-handleWakeUpIntervalGet(void);
-
 
 #endif /* _BATTERY_PLUS_H_ */
 

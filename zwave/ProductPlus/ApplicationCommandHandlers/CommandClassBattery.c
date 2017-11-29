@@ -28,6 +28,7 @@
 #include <ZW_adcdriv_api.h>
 #include <ZW_timer_api.h>
 #include "misc.h"
+#include <ZW_TransportMulticast.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
@@ -55,36 +56,38 @@
 **  Side effects: None
 **
 **--------------------------------------------------------------------------*/
-void
+received_frame_status_t
 handleCommandClassBattery(
-  BYTE  option,                   /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-                                  /* should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt, /* IN receive options of type RECEIVE_OPTIONS_TYPE_EX  */
+  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN  Payload from the received frame */
+  BYTE cmdLength)               /* IN Number of command bytes including the command */
 {
+  UNUSED(cmdLength);
   if (pCmd->ZW_Common.cmd == BATTERY_GET)
   {
     ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
     /*Check pTxBuf is free*/
-    if(NULL != pTxBuf)
+    if( NON_NULL( pTxBuf ) )
     {
+      TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+      RxToTxOptions(rxOpt, &pTxOptionsEx);
       pTxBuf->ZW_BatteryReportFrame.cmdClass = COMMAND_CLASS_BATTERY;
       pTxBuf->ZW_BatteryReportFrame.cmd = BATTERY_REPORT;
-      BatterySensorRead(&(pTxBuf->ZW_BatteryReportFrame.batteryLevel));
-      if(FALSE == Transport_SendResponse(
-          sourceNode,
+      BatterySensorRead((BATT_LEVEL *)&(pTxBuf->ZW_BatteryReportFrame.batteryLevel));
+      if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
           (BYTE *)pTxBuf,
           sizeof(ZW_BATTERY_REPORT_FRAME),
-          option,
+          pTxOptionsEx,
           ZCB_ResponseJobStatus))
       {
         /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
         FreeResponseBuffer();
       }
+      return RECEIVED_FRAME_STATUS_SUCCESS;
     }
+    return RECEIVED_FRAME_STATUS_FAIL;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
 /*================= CmdClassBatteryReport =======================
@@ -96,33 +99,19 @@ handleCommandClassBattery(
 **-------------------------------------------------------------------------*/
 JOB_STATUS
 CmdClassBatteryReport(
-  BYTE option,
-  BYTE dstNode,
-  BYTE bBattLevel,                  /* IN What to do*/
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
+  BYTE bBattLevel,
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult))
 {
-  WORD bat_mv;
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
-  if(NULL == pTxBuf)
-  {
-    /*Ongoing job is active.. just stop current job*/
-    return JOB_STATUS_BUSY;
-  }
+  CMD_CLASS_GRP cmdGrp = {COMMAND_CLASS_BATTERY, BATTERY_REPORT};
 
-  pTxBuf->ZW_BatteryReportFrame.cmdClass = COMMAND_CLASS_BATTERY;
-  pTxBuf->ZW_BatteryReportFrame.cmd = BATTERY_REPORT;
-  pTxBuf->ZW_BatteryReportFrame.batteryLevel = bBattLevel;
-  if(FALSE == Transport_SendRequest(
-      dstNode,
-      (BYTE *)pTxBuf,
-      sizeof(ZW_BATTERY_REPORT_FRAME),
-      option,
-      ZCB_RequestJobStatus,
-      FALSE))
-  {
-    /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-     FreeRequestBuffer();
-     return JOB_STATUS_BUSY;
-  }
-  return JOB_STATUS_SUCCESS;
+  return cc_engine_multicast_request(
+      pProfile,
+      sourceEndpoint,
+      &cmdGrp,
+      &bBattLevel,
+      1,
+      FALSE,
+      pCbFunc);
 }

@@ -19,6 +19,7 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+#include <ZW_typedefs.h>
 #include "config_app.h"
 #include <ZW_basis_api.h>
 #include <ZW_firmware_bootloader_defs.h>
@@ -48,7 +49,11 @@ extern code BYTE bBank3EndMarker;
 code t_firmwareDescriptor firmwareDescriptor =
 {
  /* Total amount of code used in COMMON bank */
+#ifdef __C51__
   (WORD)&firmwareDescriptor + sizeof(firmwareDescriptor),
+#else
+  0, // Value for unit tests.
+#endif
 #ifdef BOOTLOADER_ENABLED
   /* Above Size is inclusive the Bootloader code - substract FIRMWARE_BOOTLOADER_SIZE for real Firmware COMMON BANK usage */
   /* Total amount of code saved in NVM for the BANK1 bank */

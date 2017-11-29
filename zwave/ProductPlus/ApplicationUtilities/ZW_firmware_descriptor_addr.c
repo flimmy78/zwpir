@@ -29,5 +29,9 @@
 /* Size field of firmware descriptor for OTA firmware update.                 */
 /* This firmware descriptor addr field must be, and will be, located at */
 /* address FIRMWARE_INTVECTOR_OFFSET + 8 */
+#ifdef __C51__
 code WORD firmwareDescriptorAddr = (WORD)&firmwareDescriptor;
+#else
+code WORD firmwareDescriptorAddr = 0;
+#endif
 

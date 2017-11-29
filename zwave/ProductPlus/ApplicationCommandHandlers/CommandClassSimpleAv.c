@@ -6,99 +6,94 @@
 
 static BYTE seqNo;
 
-/*============================ handleCommandClassSimpleAv ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
+received_frame_status_t
 handleCommandClassSimpleAv(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength)
 {
+  ZW_APPLICATION_TX_BUFFER * pTxBuf;
+
+  UNUSED(cmdLength);
+
+  if(TRUE == Check_not_legal_response_job(rxOpt))
+  {
+    /*Get/Report do not support endpoint bit-addressing */
+    return RECEIVED_FRAME_STATUS_FAIL;
+  }
+
   switch (pCmd->ZW_Common.cmd)
   {
       //Must be ignored to avoid unintentional operation. Cannot be mapped to another command class.
     case SIMPLE_AV_CONTROL_GET:
-    {
-      ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
+      pTxBuf = GetResponseBuffer();
         /*Check pTxBuf is free*/
-      if(NULL != pTxBuf)
+      if( NON_NULL( pTxBuf ) )
       {
         /* Controller wants the sensor level */
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
         pTxBuf->ZW_SimpleAvControlReportFrame.cmdClass = COMMAND_CLASS_SIMPLE_AV_CONTROL;
         pTxBuf->ZW_SimpleAvControlReportFrame.cmd = SIMPLE_AV_CONTROL_REPORT;
         pTxBuf->ZW_SimpleAvControlReportFrame.numberOfReports =  getApplSimpleAvReports();
-        if(FALSE == Transport_SendResponse(
-            sourceNode,
+        if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
             (BYTE *)pTxBuf,
             sizeof(ZW_SIMPLE_AV_CONTROL_GET_FRAME),
-            option,
+            pTxOptionsEx,
             ZCB_ResponseJobStatus))
         {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
           FreeResponseBuffer();
         }
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
-    }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
 
     case SIMPLE_AV_CONTROL_SUPPORTED_GET:
+      pTxBuf = GetResponseBuffer();
+      /*Check pTxBuf is free*/
+      if( NON_NULL( pTxBuf ) )
       {
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
-        /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        /* Controller wants the sensor level */
+        BYTE len;
+        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+        RxToTxOptions(rxOpt, &pTxOptionsEx);
+        len = getApplSimpleAvSupported(pCmd->ZW_SimpleAvControlSupportedReport4byteFrame.reportNo,
+                                      &pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.bitMask1);
+        pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.cmdClass = COMMAND_CLASS_SIMPLE_AV_CONTROL;
+        pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.cmd = SIMPLE_AV_CONTROL_SUPPORTED_REPORT;
+        pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.reportNo = pCmd->ZW_SimpleAvControlSupportedReport4byteFrame.reportNo;
+        if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
+            (BYTE *)pTxBuf,
+            sizeof(ZW_SIMPLE_AV_CONTROL_SUPPORTED_REPORT_1BYTE_FRAME) - 1 +len,
+            pTxOptionsEx,
+            ZCB_ResponseJobStatus))
         {
-          /* Controller wants the sensor level */
-          BYTE len = getApplSimpleAvSupported(pCmd->ZW_SimpleAvControlSupportedReport4byteFrame.reportNo,
-                                        &pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.bitMask1);
-          pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.cmdClass = COMMAND_CLASS_SIMPLE_AV_CONTROL;
-          pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.cmd = SIMPLE_AV_CONTROL_SUPPORTED_REPORT;
-          pTxBuf->ZW_SimpleAvControlSupportedReport1byteFrame.reportNo = pCmd->ZW_SimpleAvControlSupportedReport4byteFrame.reportNo;
-          if(FALSE == Transport_SendResponse(
-              sourceNode,
-              (BYTE *)pTxBuf,
-              sizeof(ZW_SIMPLE_AV_CONTROL_SUPPORTED_REPORT_1BYTE_FRAME) - 1 +len,
-              option,
-              ZCB_ResponseJobStatus))
-          {
-            /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-            FreeResponseBuffer();
-          }
+          /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
+          FreeResponseBuffer();
         }
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
 
     default:
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
-
-/*================= CmdClassSimpleAvSet =======================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
 JOB_STATUS
 CmdClassSimpleAvSet(
-  BYTE option,
-  BYTE dstNode,
-  WORD bCommand,                  /* IN What to do*/
-  BYTE bKeyAttrib,                /*Key attribute*/
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX* pTxOptionsEx,
+  WORD bCommand,
+  BYTE bKeyAttrib,
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult))
 {
 
   ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
-  if(NULL == pTxBuf)
+ if( IS_NULL( pTxBuf ) )
   {
     /*Ongoing job is active.. just stop current job*/
     return JOB_STATUS_BUSY;
@@ -113,12 +108,11 @@ CmdClassSimpleAvSet(
   pTxBuf->ZW_SimpleAvControlSet1byteFrame.variantgroup1.command2 = (BYTE)(bCommand&0xff);        //Command LSB
 
 
-  if(! Transport_SendRequest(
-        dstNode,
+  if(ZW_TX_IN_PROGRESS != Transport_SendRequestEP(
         (BYTE*)pTxBuf,
         sizeof(ZW_SIMPLE_AV_CONTROL_SET_1BYTE_FRAME),
-        option,
-        ZCB_RequestJobStatus, FALSE))
+        pTxOptionsEx,
+        ZCB_RequestJobStatus))
   {
     FreeRequestBuffer();
     return JOB_STATUS_BUSY;

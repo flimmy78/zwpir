@@ -1,20 +1,11 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2014
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Some nice descriptive description.
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2014/08/07 10:30:17 $
-*
-****************************************************************************/
+/**
+ * @file notification.c
+ * @brief Command Class Notification helper module.
+ * @author Thomas Roll
+ * @copyright Copyright (c) 2001-2016
+ * Sigma Designs, Inc.
+ * All Rights Reserved
+ */
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
@@ -24,7 +15,7 @@
 #include "config_app.h"
 #include "eeprom.h"
 #include <ZW_uart_api.h>
-
+#include <ZW_mem_api.h>
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
@@ -44,18 +35,27 @@
 
 typedef struct _NOTIFICATION_
 {
+  AGI_PROFILE agiProfile;
+  uint8_t ep;
   NOTIFICATION_TYPE type;
-  BYTE event;
-  BYTE* pEvPar;
-  BYTE evParLen;
+  uint8_t* pSuppportedEvents;
+  uint8_t suppportedEventsLen;
+  uint8_t event;
+  uint8_t* pEvPar;
+  uint8_t evParLen;
+  uint8_t stateless : 1;
+  uint8_t trigged   : 1;
+  uint8_t noUsed    : 6;
 } NOTIFICATION;
 
 typedef struct _MY_NOTIFICATION_
 {
-  BYTE lastActionGrp;
-  BYTE lastNotificationType;
+  uint8_t lastActionGrp;
   NOTIFICATION grp[MAX_NOTIFICATIONS];
 } MY_NOTIFICATION;
+
+
+
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
@@ -63,7 +63,7 @@ typedef struct _MY_NOTIFICATION_
 MY_NOTIFICATION myNotification;
 
 BOOL notificationBurglerUnknownEvent = FALSE;
-BYTE notificationBurglerSequenceNbr = 0;
+uint8_t notificationBurglerSequenceNbr = 0;
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
@@ -72,147 +72,230 @@ BYTE notificationBurglerSequenceNbr = 0;
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
-BOOL ValidateNotificationType(NOTIFICATION_TYPE notificationType);
 
+static BOOL ValidateNotificationType(NOTIFICATION_TYPE notificationType, uint8_t endpoint);
 
-/*============================ InitNotification ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
-InitNotification(void)
+void InitNotification(void)
 {
-  BYTE i = 0;
+  uint8_t i = 0;
   notificationBurglerUnknownEvent = FALSE;
 
   for(i = 0; i< MAX_NOTIFICATIONS; i++)
   {
+    myNotification.grp[i].agiProfile.profile_MS = 0;
+    myNotification.grp[i].agiProfile.profile_LS = 0;
+    myNotification.grp[i].ep = 0xff;
+    myNotification.grp[i].pSuppportedEvents = NULL;
+    myNotification.grp[i].suppportedEventsLen = 0;
     myNotification.grp[i].type = NOTIFICATION_TYPE_NONE;
     myNotification.grp[i].event = 0;
+    myNotification.grp[i].stateless = 0;
+    myNotification.grp[i].pEvPar = NULL;
+    myNotification.grp[i].evParLen = 0;
+    myNotification.grp[i].trigged = 0;
   }
-  myNotification.lastActionGrp = 0xff;
-  myNotification.lastNotificationType = NOTIFICATION_TYPE_NONE;
+  myNotification.lastActionGrp = 0;
 
 }
 
-
-/*============================ AddNotification ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-BOOL
-AddNotification(NOTIFICATION_TYPE type, BYTE event, BYTE* pEvPar, BYTE evParLen)
+void DefaultNotifactionStatus(NOTIFICATION_STATUS status)
 {
-  BYTE i;
+  uint8_t i;
+  for(i = 0; i < MAX_NOTIFICATIONS; i++)
+  {
+    MemoryPutByte((WORD)&EEOFFSET_alarmStatus_far[i], (BYTE)status);
+  }
+}
+
+BOOL AddNotification(
+    AGI_PROFILE * pAgiProfile,
+    NOTIFICATION_TYPE type,
+    uint8_t * pSuppportedEvents,
+    uint8_t suppportedEventsLen,
+    BOOL stateless,
+    uint8_t endpoint)
+{
+  uint8_t i;
   /*Find free slot*/
   for(i = 0; i< MAX_NOTIFICATIONS; i++)
   {
     if( 0 == myNotification.grp[i].type)
     {
-      myNotification.lastNotificationType = type;
+      /*Event configuration*/
+      myNotification.lastActionGrp = i;
+      myNotification.grp[i].agiProfile.profile_MS = pAgiProfile->profile_MS;
+      myNotification.grp[i].agiProfile.profile_LS = pAgiProfile->profile_LS;
+      myNotification.grp[i].ep = endpoint;
       myNotification.grp[i].type = type;
-      myNotification.grp[i].event = event;
-      myNotification.grp[i].pEvPar = pEvPar;
-      myNotification.grp[i].evParLen = evParLen;
+      myNotification.grp[i].pSuppportedEvents = pSuppportedEvents;
+      myNotification.grp[i].suppportedEventsLen = suppportedEventsLen;
+      myNotification.grp[i].stateless = (stateless == FALSE) ? 0 : 1;
+
+      /*Event state*/
+      myNotification.grp[i].event = 0;
+      myNotification.grp[i].pEvPar = NULL;
+      myNotification.grp[i].evParLen = 0;
+      myNotification.grp[i].trigged = 0;
+
       return TRUE;
     }
   }
   return FALSE;
 }
 
-
-/*============================ GetGroupNotificationType ===================
-** Function description
-** This function...
-**-------------------------------------------------------------------------*/
-BYTE
-GetGroupNotificationType(NOTIFICATION_TYPE* pNotificationType)
+uint8_t GetGroupNotificationType(uint8_t* pNotificationType, uint8_t endpoint)
 {
-  BYTE i = 0;
+  uint8_t i = 0;
 
-  ZW_DEBUG_NOTIFICATION_SEND_STR("GetGroupNotificationType ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM((BYTE)*pNotificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_BYTE(' ');
+  ZW_DEBUG_NOTIFICATION_SEND_STR("\r\nGetGroupNotificationType ");
+  ZW_DEBUG_NOTIFICATION_SEND_NUM(*pNotificationType);
 
   if(0xFF == *pNotificationType)
   {
     /*Check last action is ready*/
-    if(0xff != myNotification.lastActionGrp)
+    if(0xff == myNotification.lastActionGrp)
+    {
+      /* no last action, take first*/
+      myNotification.lastActionGrp = 0;
+    }
+
+    if(endpoint == 0)
     {
       *pNotificationType =  myNotification.grp[myNotification.lastActionGrp].type;
     }
     else
     {
-      /*If no last action, then set it to first notification group*/
-      myNotification.lastActionGrp= 0;
-      *pNotificationType =  myNotification.grp[ myNotification.lastActionGrp].type;
-
+      if(myNotification.grp[myNotification.lastActionGrp].ep == endpoint)
+      {
+        *pNotificationType =  myNotification.grp[myNotification.lastActionGrp].type;
+      }
+      else{
+        /*find notification out from end-point*/
+        for(i = 0; i< MAX_NOTIFICATIONS; i++)
+        {
+          if(myNotification.grp[i].ep == endpoint)
+          {
+            *pNotificationType =  myNotification.grp[i].type;
+          }
+        }
+      }
     }
   }
 
   for(i = 0; i< MAX_NOTIFICATIONS; i++)
   {
-    if(myNotification.grp[i].type == *pNotificationType)
+    ZW_DEBUG_NOTIFICATION_SEND_NUM(myNotification.grp[i].type);
+    ZW_DEBUG_NOTIFICATION_SEND_NUM(*myNotification.grp[i].pSuppportedEvents);
+    ZW_DEBUG_NOTIFICATION_SEND_BYTE(' ');
+    if((myNotification.grp[i].type == *pNotificationType) && (myNotification.grp[i].ep == endpoint))
     {
+      ZW_DEBUG_NOTIFICATION_SEND_STR("ID ");
       ZW_DEBUG_NOTIFICATION_SEND_NUM(i);
-      ZW_DEBUG_NOTIFICATION_SEND_NL();
       return i;
     }
   }
-      ZW_DEBUG_NOTIFICATION_SEND_NUM(0xff);
-      ZW_DEBUG_NOTIFICATION_SEND_NL();
   return 0xff;
 }
 
-
-/*========================   handleAppNotificationSet  ===========
-**    Application specific Notification Set cmd handler
-**
-**   Side effects: none
-**--------------------------------------------------------------------------*/
-void
-handleAppNotificationSet(NOTIFICATION_TYPE notificationType, NOTIFICATION_STATUS_SET notificationStatus)
+BOOL FindNotificationEndpoint(
+    NOTIFICATION_TYPE notificationType,
+    uint8_t * pEndpoint)
 {
-  BYTE grp;
-  ZW_DEBUG_NOTIFICATION_SEND_STR("handleAppNotificationSet ");
+  ZW_DEBUG_NOTIFICATION_SEND_STR("\r\nFindNotificationEndpoint ");
   ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationStatus);
+  ZW_DEBUG_NOTIFICATION_SEND_STR(" EP ");
+  ZW_DEBUG_NOTIFICATION_SEND_NUM(*pEndpoint);
   ZW_DEBUG_NOTIFICATION_SEND_NL();
-  if (TRUE == ValidateNotificationType(notificationType))
+
+  if (FALSE == ValidateNotificationType(notificationType , *pEndpoint ) || (0 == *pEndpoint))
   {
-    MemoryPutByte((WORD)&(nvmApplDescriptor.alarmStatus_far[GetGroupNotificationType(&notificationType)]), (BYTE)notificationStatus);
+    if(0 == *pEndpoint)
+    {
+      if(0xFF == notificationType )
+      {
+        if(0xFF != myNotification.lastActionGrp)
+        {
+          *pEndpoint = myNotification.grp[myNotification.lastActionGrp].ep;
+        }
+        else{
+          *pEndpoint = myNotification.grp[0].ep;
+        }
+        return TRUE;
+      }
+      else
+      {
+        uint8_t i;
+
+        if(0xFF != myNotification.lastActionGrp)
+        {
+          if(myNotification.grp[myNotification.lastActionGrp].type == notificationType)
+          {
+            *pEndpoint = myNotification.grp[myNotification.lastActionGrp].ep;
+            return TRUE;
+          }
+        }
+
+        for(i = 0; i< MAX_NOTIFICATIONS; i++)
+        {
+          if((myNotification.grp[i].type == notificationType) && (0xff != myNotification.grp[i].ep))
+          {
+            *pEndpoint = myNotification.grp[i].ep;
+            return TRUE;
+          }
+        }
+      }
+    }
+  }
+  else{
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void handleAppNotificationSet(
+    NOTIFICATION_TYPE notificationType,
+    NOTIFICATION_STATUS_SET notificationStatus,
+    uint8_t endpoint)
+{
+  if (TRUE == ValidateNotificationType(notificationType, endpoint ))
+  {
+    MemoryPutByte((WORD)&(EEOFFSET_alarmStatus_far[GetGroupNotificationType((uint8_t*)&notificationType, endpoint )]), (BYTE)notificationStatus);
   }
 }
 
-
-/*========================   handleCmdClassNotificationEventSupportedReport  ===========
-**  The Event Supported Report Command is transmitted as a result of a received
-**  Event Supported Get Command and MUST not be sent unsolicited.  If an Event
-**  Supported Get is received with a not supported Notification Type or Notification
-**  Type = 0xFF, the device MUST respond with Event Supported Report (Notification
-**  Type = the requested, number of bit masks = 0).
-**  param notificationType
-**  param pBitMask bit-mask for application supported Z-Wave Alarm types.
-**  param len number of bytes in bitmask.
-**  Side effects: none
-**--------------------------------------------------------------------------*/
-void
-handleCmdClassNotificationEventSupportedReport(BYTE notificationType, BYTE* pNbrBitMask, BYTE* pBitMaskArray)
+void handleCmdClassNotificationEventSupportedReport(
+    uint8_t notificationType,
+    uint8_t * pNbrBitMask,
+    uint8_t * pBitMaskArray,
+    uint8_t endpoint)
 {
-  ZW_DEBUG_NOTIFICATION_SEND_STR("handleCmdClassNotificationEventSupportedReport ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
-  if( TRUE == ValidateNotificationType(notificationType) && (0xff != notificationType))
+  if( TRUE == FindNotificationEndpoint(notificationType, &endpoint) )
   {
-    *pNbrBitMask = 1 + NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION/8;
-    pBitMaskArray[0] = 0;
-    pBitMaskArray[1] = 1;
+    uint8_t temp_notificationType = notificationType;
+    uint8_t grpNo = GetGroupNotificationType(&temp_notificationType, endpoint );
+    uint8_t i;
+
+    if(temp_notificationType != notificationType)
+    {
+      grpNo = 0xff;
+    }
+
+    *pNbrBitMask = 0;
+    if(0xff == grpNo)
+    {
+      return;
+    }
+    for( i = 0; i < myNotification.grp[grpNo].suppportedEventsLen; i++)
+    {
+      if( *pNbrBitMask < myNotification.grp[grpNo].pSuppportedEvents[i] )
+      {
+        *pNbrBitMask = myNotification.grp[grpNo].pSuppportedEvents[i];
+      }
+
+      pBitMaskArray[myNotification.grp[grpNo].pSuppportedEvents[i]/8] |= (0x01<< (myNotification.grp[grpNo].pSuppportedEvents[i]%8));
+    }
+    /*calc number of bitmask bytes*/
+    *pNbrBitMask = (*pNbrBitMask / 8) + 1;
   }
   else{
     /*Only support Unkown event why bit maks is 0*/
@@ -220,224 +303,264 @@ handleCmdClassNotificationEventSupportedReport(BYTE notificationType, BYTE* pNbr
   }
 }
 
-
-
-/*============================ CmdClassNotificationGetNotificationStatus =====
-** Function description
-** Return  notification status.
-**-------------------------------------------------------------------------*/
-NOTIFICATION_STATUS
-CmdClassNotificationGetNotificationStatus(BYTE notificationType)
+NOTIFICATION_STATUS CmdClassNotificationGetNotificationStatus(
+    uint8_t notificationType,
+    uint8_t endpoint)
 {
   NOTIFICATION_STATUS status = NOTIFICATION_STATUS_UNSOLICIT_DEACTIVATED;
-
-  ZW_DEBUG_NOTIFICATION_SEND_STR("CmdClassNotificationGetNotificationStatus ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationType);
-  if (TRUE == ValidateNotificationType(notificationType) )
+  uint8_t grp = GetGroupNotificationType( &notificationType, endpoint );
+  if(0xff != grp)
   {
-    if(MemoryGetByte((WORD) &nvmApplDescriptor.alarmStatus_far[GetGroupNotificationType((NOTIFICATION_TYPE*)&notificationType)]))
+    if(MemoryGetByte((WORD)&EEOFFSET_alarmStatus_far[grp]))
     {
       status = NOTIFICATION_STATUS_UNSOLICIT_ACTIVED;
     }
   }
+
   return status;
 }
 
-
-/*============================ CmdClassNotificationGetNotificationEvent =====
-** Function description
-** This function...
-**-------------------------------------------------------------------------*/
-BOOL
-CmdClassNotificationGetNotificationEvent(BYTE* pNotificationType,
-                                         BYTE* pNotificationEvent,
-                                         BYTE* pEventPar,
-                                         BYTE* pEvNbrs)
+BOOL CmdClassNotificationGetNotificationEvent(
+    uint8_t * pNotificationType,
+    uint8_t * pNotificationEvent,
+    uint8_t * pEventPar,
+    uint8_t * pEvNbrs,
+    uint8_t endpoint)
 {
-  BYTE grp_nbr = GetGroupNotificationType((NOTIFICATION_TYPE*)pNotificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_STR("CmdClassNotificationGetNotificationEvent ");
+  uint8_t i = 0;
+  uint8_t grpNo = GetGroupNotificationType(pNotificationType, endpoint );
+  *pEventPar = 0;
+  *pEvNbrs = 0;
+  if(0xff == grpNo)
+  {
+    return FALSE;
+  }
+
+  ZW_DEBUG_NOTIFICATION_SEND_STR("GetNotificationEvent");
   ZW_DEBUG_NOTIFICATION_SEND_NUM(*pNotificationType);
   ZW_DEBUG_NOTIFICATION_SEND_NUM(*pNotificationEvent);
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(myNotification.grp[grp_nbr].evParLen);
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
-  if(TRUE == ValidateNotificationType(*pNotificationType) && 0xff != grp_nbr)
+  /*check valid type*/
+  if(TRUE == ValidateNotificationType(*pNotificationType, endpoint ))
   {
-    if((*pNotificationEvent == myNotification.grp[grp_nbr].event) ||
-       (0x00 == *pNotificationEvent))
+    ZW_DEBUG_NOTIFICATION_SEND_NUM(myNotification.grp[grpNo].event);
+
+    /*check valid event*/
+    ZW_DEBUG_NOTIFICATION_SEND_STR(" valid event ");
+    for(i = 0; i < myNotification.grp[grpNo].suppportedEventsLen; i++)
     {
+      ZW_DEBUG_NOTIFICATION_SEND_NUM(myNotification.grp[grpNo].pSuppportedEvents[i]);
+
+
+      if((*pNotificationEvent == myNotification.grp[grpNo].pSuppportedEvents[i]) && (0x00 != *pNotificationEvent))
+      {
+        /* Found correct supported event*/
+        if(*pNotificationEvent == myNotification.grp[grpNo].event)
+        {
+          /* Event in queue*/
+          *pEvNbrs = myNotification.grp[grpNo].evParLen;
+          for(i = 0; i < myNotification.grp[grpNo].evParLen; i++)
+          {
+            pEventPar[i] = myNotification.grp[grpNo].pEvPar[i];
+          }
+          return TRUE;
+        }
+        else
+        {
+          /*No event in queue*/
+          *pNotificationEvent = 0x00;
+          *pNotificationEvent = 0;
+          *pEventPar = 0;
+          return TRUE;
+        }
+      }
+    }
+
+    if( *pNotificationEvent == 0x00)
+    {
+      /*Check for any event in queue*/
+      ZW_DEBUG_NOTIFICATION_SEND_BYTE('!');
+      ZW_DEBUG_NOTIFICATION_SEND_BYTE( myNotification.lastActionGrp);
       if( 0xff != myNotification.lastActionGrp)
       {
-        BYTE i = 0;
-        *pEvNbrs = myNotification.grp[grp_nbr].evParLen;
-        for(i = 0; i < myNotification.grp[grp_nbr].evParLen; i++)
+        uint8_t i = 0;
+        *pNotificationEvent = myNotification.grp[grpNo].event;
+        *pEvNbrs = myNotification.grp[grpNo].evParLen;
+        for(i = 0; i < myNotification.grp[grpNo].evParLen; i++)
         {
-          pEventPar[i] = myNotification.grp[grp_nbr].pEvPar[i];
+          pEventPar[i] = myNotification.grp[grpNo].pEvPar[i];
         }
+        //myNotification.lastActionGrp = 0xff;// empty last action
 
-        ZW_DEBUG_NOTIFICATION_SEND_STR(" event");
-        ZW_DEBUG_NOTIFICATION_SEND_NL();
         return TRUE;
       }
-      else{
-        ZW_DEBUG_NOTIFICATION_SEND_STR(" no event 2");
-        ZW_DEBUG_NOTIFICATION_SEND_NL();
-        *pNotificationType = myNotification.lastNotificationType;
+      else
+      {
+        ZW_DEBUG_NOTIFICATION_SEND_BYTE('%');
+        /*No event in queue*/
         *pNotificationEvent = 0x00;
         return TRUE;
       }
     }
-    ZW_DEBUG_NOTIFICATION_SEND_STR(" unknown event");
-    *pNotificationType = myNotification.lastNotificationType;
+
+    /* Event is not supported!*/
+    ZW_DEBUG_NOTIFICATION_SEND_BYTE('-');
     *pNotificationEvent = 0xFE;
-    *pEventPar = NULL;
-    *pEvNbrs = 0;
-    ZW_DEBUG_NOTIFICATION_SEND_NL();
+    *pEventPar = 0;
+    //ZW_DEBUG_NOTIFICATION_SEND_NL();
     return TRUE;
   }
-  ZW_DEBUG_NOTIFICATION_SEND_STR("wrong event");
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
   return FALSE;
 }
 
-
-/*============================ NotificationEventTrigger ===============================
-** Function description
-** Trig an event
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
-NotificationEventTrigger(BYTE notificationType,BYTE notificationEvent)
+void NotificationEventTrigger(
+    AGI_PROFILE * pAgiProfile,
+    uint8_t notificationEvent,
+    uint8_t * pEvPar,
+    uint8_t evParLen,
+    uint8_t sourceEndpoint)
 {
-  ZW_DEBUG_NOTIFICATION_SEND_STR("NotificationEventTrigger ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationEvent);
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
+  uint8_t i;
 
-  if(TRUE == ValidateNotificationType(notificationType))
-  {
-    myNotification.lastNotificationType = notificationType;
-    if(myNotification.grp[GetGroupNotificationType((NOTIFICATION_TYPE*) &notificationType)].event == notificationEvent)
-    {
-      myNotification.lastActionGrp = GetGroupNotificationType((NOTIFICATION_TYPE*) &notificationType);
-    }
-    else
-    {
-      /*Not legal event*/
-      myNotification.lastActionGrp = 0xff;
-    }
-  }
-}
-
-
-/*============================ ReadLastNotificationAction ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-BOOL
-ReadLastNotificationAction(NOTIFICATION_TYPE* pType, BYTE* pEvent)
-{
-  ZW_DEBUG_NOTIFICATION_SEND_STR("ReadLastNotificationAction ");
-  if(0xFF != myNotification.lastActionGrp)
-  {
-    if( NULL != pType){
-      *pType = myNotification.grp[myNotification.lastActionGrp].type;
-    }
-    if( NULL != pEvent){
-      *pEvent = myNotification.grp[myNotification.lastActionGrp].event;
-    }
-    ZW_DEBUG_NOTIFICATION_SEND_NUM(*pType);
-    ZW_DEBUG_NOTIFICATION_SEND_NUM(*pEvent);
-    ZW_DEBUG_NOTIFICATION_SEND_NL();
-    return TRUE;
-  }
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
-  return FALSE;
-}
-
-/*============================ ClearLatNotificationAction ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
-ClearLastNotificationAction(void)
-{
-  ZW_DEBUG_NOTIFICATION_SEND_STR("ClearLastNotificationAction ");
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
-  myNotification.lastActionGrp = 0xff;
-}
-
-
-/*============================ handleCmdClassNotificationSupportedReport ======
-** Function description
-** Report the supported Notification Types in the application in a Bit Mask array.
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
-handleCmdClassNotificationSupportedReport( BYTE* pNbrBitMask, BYTE* pBitMaskArray)
-{
-  BYTE i = 0;
-  *pNbrBitMask = 0;
-
-  ZW_DEBUG_NOTIFICATION_SEND_STR("handleCmdClassNotificationSupportedReport ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(*pNbrBitMask);
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(*pBitMaskArray);
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
   for(i = 0; i< MAX_NOTIFICATIONS; i++)
   {
-    if( myNotification.grp[i].type != NOTIFICATION_TYPE_NONE)
+    if( myNotification.grp[i].agiProfile.profile_MS == pAgiProfile->profile_MS &&
+        myNotification.grp[i].agiProfile.profile_LS  == pAgiProfile->profile_LS &&
+        myNotification.grp[i].ep == sourceEndpoint &&
+        NOTIFICATION_STATUS_UNSOLICIT_ACTIVED ==
+        CmdClassNotificationGetNotificationStatus( myNotification.grp[i].type, myNotification.grp[i].ep)
+      )
     {
-      /* Find max number of bit masks*/
-      if(*pNbrBitMask < ((myNotification.grp[i].type / 8) + 1))
-      {
-        *pNbrBitMask = (myNotification.grp[i].type / 8) + 1;
-      }
-      /* Add Bit in bit-mask byte (myNotification.grp[i].type / 8)*/
-      *(pBitMaskArray + (myNotification.grp[i].type / 8)) |= (1 << ((myNotification.grp[i].type) % 8));
+      //myNotification.lastNotificationType = myNotification.grp[i].type;
+      myNotification.lastActionGrp = i;
+      myNotification.grp[i].event = notificationEvent;
+      myNotification.grp[i].pEvPar = pEvPar;
+      myNotification.grp[i].evParLen = evParLen;
+      myNotification.grp[i].trigged = 1;
+      i = MAX_NOTIFICATIONS;
     }
   }
 }
 
-/*============================ ValidateNotificationType ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-BOOL
-ValidateNotificationType(NOTIFICATION_TYPE notificationType)
+JOB_STATUS UnsolicitedNotificationAction(
+  AGI_PROFILE* pProfile,
+  uint8_t sourceEndpoint,
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult))
 {
-  BYTE i = 0;
-  ZW_DEBUG_NOTIFICATION_SEND_STR("ValidateNotificationType ");
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(notificationType);
-  ZW_DEBUG_NOTIFICATION_SEND_BYTE(' ');
+  if (myNotification.lastActionGrp >= MAX_NOTIFICATIONS)
+  {
+    return JOB_STATUS_BUSY;
+  }
+
+  if (myNotification.grp[myNotification.lastActionGrp].agiProfile.profile_MS == pProfile->profile_MS &&
+      myNotification.grp[myNotification.lastActionGrp].agiProfile.profile_LS == pProfile->profile_LS)
+  {
+    ZW_DEBUG_SEND_NUM(sourceEndpoint);
+    ZW_DEBUG_NOTIFICATION_SEND_NL();
+    ZW_DEBUG_NOTIFICATION_SEND_BYTE('a');
+    return CmdClassNotificationReport( pProfile,
+                                   sourceEndpoint,
+                                   myNotification.grp[myNotification.lastActionGrp].type,
+                                   myNotification.grp[myNotification.lastActionGrp].event,
+                                   pCallback);
+  }
+  ZW_DEBUG_NOTIFICATION_SEND_NL();
+  ZW_DEBUG_NOTIFICATION_SEND_BYTE('b');
+  return JOB_STATUS_BUSY;
+}
+
+void ClearLastNotificationAction(AGI_PROFILE* pAgiProfile, uint8_t sourceEndpoint)
+{
+  uint8_t i;
+  myNotification.lastActionGrp = 0xff;
+  for(i = 0; i< MAX_NOTIFICATIONS; i++)
+  {
+    if( myNotification.grp[i].agiProfile.profile_MS == pAgiProfile->profile_MS &&
+        myNotification.grp[i].agiProfile.profile_LS  == pAgiProfile->profile_LS &&
+        myNotification.grp[i].ep == sourceEndpoint)
+    {
+      if(1 == myNotification.grp[i].stateless || 0 == myNotification.grp[i].event)
+      {
+        myNotification.grp[i].event = 0;
+        myNotification.grp[i].pEvPar = NULL;
+        myNotification.grp[i].evParLen = 0;
+        myNotification.grp[i].trigged = 0;
+      }
+    }
+  }
+}
+
+void handleCmdClassNotificationSupportedReport(
+    uint8_t * pNbrBitMask,
+    uint8_t * pBitMaskArray,
+    uint8_t endpoint)
+{
+  uint8_t i = 0;
+  *pNbrBitMask = 0;
+
+  if(0 == endpoint )   /* find all notification types for device*/
+  {
+    for(i = 0; i< MAX_NOTIFICATIONS; i++)
+    {
+      if( myNotification.grp[i].type != NOTIFICATION_TYPE_NONE)
+      {
+        /* Find max number of bit masks*/
+        if(*pNbrBitMask < ((myNotification.grp[i].type / 8) + 1))
+        {
+          *pNbrBitMask = (myNotification.grp[i].type / 8) + 1;
+        }
+        /* Add Bit in bit-mask byte (myNotification.grp[i].type / 8)*/
+        *(pBitMaskArray + (myNotification.grp[i].type / 8)) |= (1 << ((myNotification.grp[i].type) % 8));
+      }
+    }
+  }
+  else  /* find all notification types for endpoint*/
+  {
+    for(i = 0; i< MAX_NOTIFICATIONS; i++)
+    {
+      if( (myNotification.grp[i].type != NOTIFICATION_TYPE_NONE) &&
+          (myNotification.grp[i].ep == endpoint))
+      {
+        /* Find max number of bit masks*/
+        if(*pNbrBitMask < ((myNotification.grp[i].type / 8) + 1))
+        {
+          *pNbrBitMask = (myNotification.grp[i].type / 8) + 1;
+        }
+        /* Add Bit in bit-mask byte (myNotification.grp[i].type / 8)*/
+        *(pBitMaskArray + (myNotification.grp[i].type / 8)) |= (1 << ((myNotification.grp[i].type) % 8));
+      }
+    }
+  }
+}
+
+/**
+ * @brief Validates whether a given notification type is set for a given endpoint.
+ * @param notificationType Notification type.
+ * @param endpoint Endpoint number
+ * @return TRUE if notification type is set for endpoint, FALSE otherwise.
+ */
+static BOOL ValidateNotificationType(NOTIFICATION_TYPE notificationType, uint8_t endpoint)
+{
+  uint8_t i = 0;
 
   if( 0xFF == notificationType)
   {
-    return TRUE;
+    for(i = 0; i< MAX_NOTIFICATIONS; i++)
+    {
+      if(myNotification.grp[i].ep == endpoint)
+      {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   for(i = 0; i< MAX_NOTIFICATIONS; i++)
   {
-    if(myNotification.grp[i].type == notificationType)
+    if(myNotification.grp[i].type == notificationType && myNotification.grp[i].ep == endpoint)
     {
-      ZW_DEBUG_NOTIFICATION_SEND_NUM(1);
-      ZW_DEBUG_NOTIFICATION_SEND_NL();
       return TRUE;
     }
   }
-  ZW_DEBUG_NOTIFICATION_SEND_NUM(0);
-  ZW_DEBUG_NOTIFICATION_SEND_NL();
   return FALSE;
 }
 

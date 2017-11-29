@@ -1,21 +1,9 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2013
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Implements functions that make is easier to support
-*              Battery monitor
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2013/06/25 14:44:03 $
-*
-****************************************************************************/
+/**
+ * @file
+ * Implements functions that make it easier to support Battery monitor.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
+ */
+
 #ifndef _BATTERY_MONITOR_H_
 #define _BATTERY_MONITOR_H_
 
@@ -28,6 +16,9 @@
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
 
+/**
+ * Battery levels
+ */
 typedef enum _BATT_LEVELS_
 {
   BATT_DEAD_LEV = 0xff,
@@ -37,6 +28,9 @@ typedef enum _BATT_LEVELS_
 } BATT_LEVEL;
 
 
+/**
+ * Battery states
+ */
 typedef enum _ST_BATT_ {ST_BATT_FULL, ST_BATT_HIGH, ST_BATT_LOW, ST_BATT_DEAD} ST_BATT;
 
 /****************************************************************************/
@@ -47,50 +41,58 @@ typedef enum _ST_BATT_ {ST_BATT_FULL, ST_BATT_HIGH, ST_BATT_LOW, ST_BATT_DEAD} S
 /*                           EXPORTED FUNCTIONS                             */
 /****************************************************************************/
 
-/*============================ TimeToSendBattReport ===============================
-** Function description check if the battery level is low and send battery level report
-**
-**  txOption the RF tx option to use when sending battery level report
-**  completedFunc callback function used to give the status of the transmition 
-**  process
-**
-** Return TRUE if battery report should be send, FALSE if battery level report 
-**        should not be send
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-BOOL
-TimeToSendBattReport(BYTE txOption,
-                    VOID_CALLBACKFUNC(completedFunc)(BYTE) );
-/*============================ InitBatteryMonitor ===============================
-** Function description
-** Init Battery module
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-void
-InitBatteryMonitor(BYTE wakeUpReason);
+/**
+ * @brief TimeToSendBattReport
+ * Function description check if the battery level
+ *
+ * @return TRUE if battery report should be send, FALSE if battery level report
+ *   should not be send
+ */
+BOOL TimeToSendBattReport( void );
 
 
-/*============================ SetLowBattReport ===============================
-** Function description
-** Set status if Lowbatt reoprt should be active og deactive. FALSE is deactive
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-void
-SetLowBattReport(BOOL status);
+/**
+ * @brief TimeToSendBattReport
+ * Send battery level report
+ *
+ * @param completedFunc callback function used to give the status of the transmition
+ *  process
+ * @return job status
+ */
+JOB_STATUS
+SendBattReport(VOID_CALLBACKFUNC(completedFunc)(TRANSMISSION_RESULT * pTransmissionResult) );
 
 
+/**
+ * @brief InitBatteryMonitor
+ * Init Battery module
+ * @param wakeUpReason received from ApplicationInitHW()
+ */
+void InitBatteryMonitor(BYTE wakeUpReason);
 
-/** 
+
+/**
+ * @brief SetLowBattReport
+ * Reactivate Low battery report.
+ */
+void ActivateBattNotificationTrigger();
+
+
+/**
  * @brief BatteryMonitorState
- * Comment function...
+ * Get battery monitor state
  * @return Battry monitor state of type ST_BATT
  */
 ST_BATT BatteryMonitorState(void);
+
+#ifdef NOT_USED
+/**
+ * @brief  Read the Battery voltage level
+ * @param[out] pointer to level battery level.
+ * @return battery state is change since last measurement: TRUE if change else FALSE.
+ */
+BOOL
+BatterySensorRead(BATT_LEVEL *battLvl );
+#endif
 
 #endif /* _BATTERY_MONITOR_H_ */

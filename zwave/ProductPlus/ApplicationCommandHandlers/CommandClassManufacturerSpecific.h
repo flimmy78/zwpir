@@ -10,12 +10,10 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
-#include <ZW_typedefs.h>
-#include <ZW_sysdefs.h>
-#include <ZW_pindefs.h>
-#include <ZW_evaldefs.h>
-#include <ZW_classcmd.h>
 
+#include <ZW_typedefs.h>
+#include <ZW_classcmd.h>
+#include <ZW_TransportEndpoint.h>
 
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
@@ -26,77 +24,82 @@
  */
 #define CommandClassManufacturerVersionGet() MANUFACTURER_SPECIFIC_VERSION_V2
 
-typedef struct _T_MSINFO_{
-  BYTE  manufacturerId1;
-  BYTE  manufacturerId2;
-  BYTE  productTypeId1;
-  BYTE  productTypeId2;
-  BYTE  productId1;
-  BYTE  productId2;
-} T_MSINFO;
+#define MAN_DEVICE_ID_SIZE (8)
+
+/**
+ * Command class manufacturer specific device Id type
+ */
+typedef enum _DEVICE_ID_TYPE_
+{
+  DEVICE_ID_TYPE_OEM = 0,
+  DEVICE_ID_TYPE_SERIAL_NBR,
+  DEVICE_ID_TYPE_PSEUDO_RANDOM
+}
+DEVICE_ID_TYPE;
+
+/**
+ * Command class manufacturer specific device Id format
+ */
+typedef enum _DEVICE_ID_FORMAT_
+{
+  DEVICE_ID_FORMAT_UTF_8 = 0,
+  DEVICE_ID_FORMAT_BIN
+}
+DEVICE_ID_FORMAT;
 
 
-typedef enum _DEVICE_ID_TYPE_ { DEVICE_ID_TYPE_OEM = 0, DEVICE_ID_TYPE_SERIAL_NBR, DEVICE_ID_TYPE_PSEUDO_RANDOM} DEVICE_ID_TYPE;
-typedef enum _DEVICE_ID_FORMAT_ { DEVICE_ID_FORMAT_UTF_8 = 0, DEVICE_ID_FORMAT_BIN} DEVICE_ID_FORMAT;
+/**
+ * Command class manufacturer specific device Id data
+ */
 typedef struct _DEV_ID_DATA
 {
-  BYTE DevIdDataFormat: 3; /*Type DEVICE_ID_FORMAT*/
+  BYTE DevIdDataFormat: 3; /**< Type DEVICE_ID_FORMAT */
   BYTE DevIdDataLen: 5;
   BYTE* pDevIdData;
-} DEV_ID_DATA;
+}
+DEV_ID_DATA;
+
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
 
 /****************************************************************************/
 /*                           EXPORTED FUNCTIONS                             */
 /****************************************************************************/
 
- 
-/** 
- * @brief handleCommandClassManufacturerSpecific
- * @param option IN Frame header info.
- * @param sourceNode IN Command sender Node ID.
- * @param pCmd IN Payload from the received frame, the union should be used to access 
+/**
+ * @brief Handler for the Manufacturer Specific command class.
+ * @param[in] rxOpt receive options of type RECEIVE_OPTIONS_TYPE_EX
+ * @param[in] pCmd Payload from the received frame, the union should be used to access
  * the fields.
- * @param cmdLength IN Number of command bytes including the command.
- * @return none.
+ * @param[in] cmdLength Number of command bytes including the command.
+ * @return receive frame status.
  */
-extern void
-handleCommandClassManufacturerSpecific(
-  BYTE  option,                    
-  BYTE  sourceNode,                
-  ZW_APPLICATION_TX_BUFFER *pCmd,  
-  BYTE   cmdLength                
-);
+received_frame_status_t handleCommandClassManufacturerSpecific(
+    RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+    ZW_APPLICATION_TX_BUFFER *pCmd,
+    BYTE cmdLength);
 
-/** 
- * @brief ApplManufacturerSpecificInfoGet
- * Read the manufacturer specific info from the application the manufacturer 
- * specific info are the manufacturerId1/2, productTypeId1/2 and productId1/2.
- *
- * @param msInfo: OUT pointer of type t_MSInfo that should hold the manufacturer 
- * specific information
- * @return None.
+/**
+ * @brief Read the Device specifict ID Data fields.
+ * @param[in] deviceIdType values for the Device ID Type of enum type DEVICE_ID_TYPE
+ * @param[out] pDevIdDataFormat pointer to data format of type DEVICE_ID_FORMAT
+ * @param[out] pDevIdDataLen  pointer returning len of the Device ID Data fields.
+ * @param[out] pDevIdData pointer to the Device ID Data fields.
+ * @return boolean
  */
-extern void 
-ApplManufacturerSpecificInfoGet(T_MSINFO *t_msInfo); 
+extern void ApplDeviceSpecificInfoGet(
+    DEVICE_ID_TYPE *deviceIdType,
+    DEVICE_ID_FORMAT* pDevIdDataFormat,
+    BYTE* pDevIdDataLen,
+    BYTE* pDevIdData);
 
-
-/** 
- * @brief ApplDeviceSpecificInfoGet
- * Read the Device specifict ID Data fields.
- * @param deviceIdType values for the Device ID Type of enum type DEVICE_ID_TYPE
- * @param pDevIdData OUT pointer to the Device ID Data fields.
- * @param pDevIdDataLen OUT pointer returning len of the Device ID Data fields.
- * @return none.
+/**
+ * @brief Read the manufacturer specific unique serial number from NVR if the number from NVR all
+ * 0xFF then create a random one.
  */
-extern BOOL
-ApplDeviceSpecificInfoGet(DEVICE_ID_TYPE *deviceIdType, 
-  DEVICE_ID_FORMAT* pDevIdDataFormat,
-  BYTE* pDevIdDataLen,
-  BYTE* pDevIdData);
+void ManufacturerSpecificDeviceIDInit(void);
 
 #endif /* _COMMANDCLASSMANUFACTURERSPECIFIC_H_ */
-

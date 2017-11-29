@@ -40,6 +40,7 @@
 
 #include <ZW_uart_api.h>
 #include <ZW_debug_api.h>
+#include <misc.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
@@ -76,7 +77,7 @@ BOOL bEventTick = FALSE;
 /****************************************************************************/
 void *GetArea( void);
 void ReleaseArea( void* ptr);
-void EventTicker(void);
+void ZCB_EventTicker(void);
 void EventTimerStart(void);
 void EventTimerStop(void);
 BYTE FindHandle(eventQueueElement* pElement, VOID_CALLBACKFUNC(pSchedApp)(void));
@@ -115,7 +116,7 @@ void *GetArea( void)
 void ReleaseArea( void* ptr)
 {
 
-  if( NULL != ptr)
+  if( NON_NULL( ptr ))
   {
     BYTE* ptrTemp = (BYTE*)ptr; /* free myEventScheduler.area[x][0]*/
     *(--ptrTemp) = 0;
@@ -125,15 +126,14 @@ void ReleaseArea( void* ptr)
 
 
 
-/*================================== EventTicker =============================
+/*================================== ZCB_EventTicker =============================
 **  Event Scheduler timer tick.
 **  Sets bEventTick = TRUE if not bEventTick != FALSE
 **
 **  Side effects:
 **
 **--------------------------------------------------------------------------*/
-void
-EventTicker(void)
+PCB(ZCB_EventTicker)(void)
 {
   if (!bEventTick)
   {
@@ -157,7 +157,7 @@ EventTimerStart(void)
     EventTimerStop();
   }
   /* Start Event Timer, so that EventTimerTicker gets called every 20ms */
-  myEventScheduler.bEventTimerHandle = TimerStart( EventTicker, 2, TIMER_FOREVER);
+  myEventScheduler.bEventTimerHandle = TimerStart( ZCB_EventTicker, 2, TIMER_FOREVER);
 }
 
 
@@ -223,7 +223,7 @@ NewHandle(
   {
     while (handle !=  pElement->handle)
     {
-      if (NULL == pElement->pNext)
+      if (IS_NULL( pElement->pNext ))
       {
         return handle;
       }
@@ -297,7 +297,7 @@ EventSchedulerAdd(
 
 
   /*First time*/
-  if (NULL == myEventScheduler.pRoot)
+  if (IS_NULL( myEventScheduler.pRoot ))
   {
     //ZW_DEBUG_SEND_STR("root");
     /*first time. Clear all*/
@@ -307,7 +307,7 @@ EventSchedulerAdd(
     }
     //eventQueueElement* pElement = malloc(sizeof(eventQueueElement));
     myEventScheduler.pRoot = GetArea();
-    if (NULL != myEventScheduler.pRoot)
+    if (NON_NULL( myEventScheduler.pRoot ))
     {
       myEventScheduler.pRoot->handle = 1;
       handle = myEventScheduler.pRoot->handle;
@@ -326,7 +326,7 @@ EventSchedulerAdd(
     {
       //eventQueueElement* pElement = malloc( sizeof(eventQueueElement) );
       eventQueueElement* pElement = GetArea( );
-      if (NULL != pElement)
+      if (NON_NULL( pElement ))
       {
         handle = NewHandle(myEventScheduler.pRoot);
         if (0 != handle)
@@ -367,7 +367,7 @@ EventSchedulerRemove(
   //ZW_DEBUG_SEND_BYTE(*pHandle);
   //ZW_DEBUG_SEND_NL();
   //eventQueueElement** pElement = FindSchedApp(&myEventScheduler.pRoot, *pHandle);
-  if (NULL == myEventScheduler.pRoot)
+  if (IS_NULL( myEventScheduler.pRoot ))
   {
     /* No more Events */
     EventTimerStop();
@@ -378,7 +378,7 @@ EventSchedulerRemove(
     if (*pHandle == myEventScheduler.pRoot->handle)
     {
       /* We are root! */
-      if (NULL == myEventScheduler.pRoot->pNext)
+      if (IS_NULL( myEventScheduler.pRoot->pNext ))
       {
         /* No more EventHandlers */
         EventTimerStop();
@@ -393,7 +393,7 @@ EventSchedulerRemove(
       eventQueueElement* pPostelement;
       do
       {
-        if (NULL == pElement->pNext)
+        if (IS_NULL( pElement->pNext ))
         {
           /* handle is not present! */
           return FALSE;
@@ -416,21 +416,20 @@ EventSchedulerRemove(
 }
 
 
-/*================================== EventScheduler ==========================
+/*================================== ZCB_EventScheduler ==========================
 **  Scheduler engine.
 **
 **  Side effects:
 **
 **--------------------------------------------------------------------------*/
-void
-EventScheduler(
+PCB(ZCB_EventScheduler)(
   void)
 {
   if (bEventTick)
   {
     pElementCurrent->pSchedApp();
     pElementCurrent = pElementCurrent->pNext;
-    if (NULL == pElementCurrent)
+    if (IS_NULL( pElementCurrent ))
     {
       bEventTick = FALSE;
     }

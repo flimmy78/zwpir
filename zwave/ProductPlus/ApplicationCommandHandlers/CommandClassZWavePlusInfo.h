@@ -15,28 +15,41 @@
 #include <ZW_pindefs.h>
 #include <ZW_evaldefs.h>
 #include <ZW_classcmd.h>
+#include <CommandClass.h>
 
 /**
  * Returns the version of this CC.
  */
-#define CommandClassZWavePlusVersion() ZWAVEPLUS_INFO_VERSION_V2
- 
-/** 
- * @brief handleCommandClassZWavePlusInfo
- * handler for ZWave Plus Info CC
- * @param option IN Frame header info
- * @param sourceNode IN Command sender Node ID
- * @param pCmd  Payload pointer from the received frame, the union should 
- * be used to access the fields.
- * @param cmdLength IN Number of command bytes including the command
+#define CommandClassZWavePlusVersionGet() ZWAVEPLUS_INFO_VERSION_V2
+#define CommandClassZWavePlusVersion() CommandClassZWavePlusVersionGet()
+
+/**
+ * Endpoint Icons data struct
+ */
+typedef struct _ENDPOINT_ICONS_
+{
+  uint16_t installerIconType;
+  uint16_t userIconType;
+} ST_ENDPOINT_ICONS;
+
+/**
+ * @brief Init Command class Z-Wave Plus Info
+ * @param[in] pEpIcon pointer to device incon types
+ * @param[in] nbrOfElements number of elements
  * @return description..
  */
-void
-handleCommandClassZWavePlusInfo(
-  BYTE  option,                    
-  BYTE  sourceNode,                
-  ZW_APPLICATION_TX_BUFFER *pCmd,  
-  BYTE   cmdLength                
-);
+void CommandClassZWavePlusInfoInit(ST_ENDPOINT_ICONS* pEpIcon, uint8_t nbrOfElements);
+
+/**
+ * @brief Handler for Z-Wave Plus Info CC.
+ * @param[in] rxOpt Pointer to receive options.
+ * @param[in] pCmd Pointer to payload from the received frame
+ * @param[in] cmdLength Length of the received command given in bytes.
+ * @return receive frame status.
+ */
+received_frame_status_t handleCommandClassZWavePlusInfo(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  uint8_t cmdLength);
 
 #endif

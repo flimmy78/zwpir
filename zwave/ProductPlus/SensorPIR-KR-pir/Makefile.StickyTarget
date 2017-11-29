@@ -1,0 +1,9 @@
+ifeq ($(MAKELEVEL),0)
+default: sticky
+sticky:
+	$(MAKE) $(MAKEOPTS) .  BOOT=nonBOOT  LIBRARY=slave_routing  FREQUENCY=KR  CODE_MEMORY_MODE=banking  SENSOR_TYPE=BATTERY  CHIP=ZW050x  WATCHDOG=WATCHDOG_DISABLED
+else
+default: ZW0x0x
+endif
+#
+STICKY_TARGET:=yes

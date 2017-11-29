@@ -21,8 +21,10 @@
 /****************************************************************************/
 #include <ZW_typedefs.h>
 #include <ZW_classcmd.h>
-#include <ZW_TransportLayer.h>
 #include <ZW_cmd_class_list.h>
+#include <ZW_TransportSecProtocol.h>
+
+
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
@@ -79,53 +81,35 @@ CheckCmdClass(BYTE cmdClass,
 }
 
 BOOL
-CmdClassSupported( BOOL frameSecure, /*secure (TRUE) or nonsecure (FALSE)*/
-                BYTE cmdClass, /*incoming frames cmdclass*/
-                BYTE* pSecurelist, /*secure list*/
-                BYTE securelistLen, /*secure list length*/
-                BYTE* pNonSecurelist, /*nonsecure list*/
-                BYTE nonSecurelistLen) /*nonsecure list length*/
+CmdClassSupported(security_key_t eKey,
+                  BYTE cmdClass,
+                  BYTE* pSecurelist,
+                  BYTE securelistLen,
+                  BYTE* pNonSecurelist,
+                  BYTE nonSecurelistLen)
 {
-  /*Check if cmd Class are supported in current mode (unsecure or secure)*/
-  if( TRUE == frameSecure )
+  security_key_t device_higest_secure_level = GetHighestSecureLevel(ZW_GetSecurityKeys());
+  /*Only allow secure command list if node is securely included.*/
+  /*Check if cmd Class are supported in current mode (non-secure or secure)*/
+  if((SECURITY_KEY_NONE != device_higest_secure_level) && (eKey == device_higest_secure_level) && NON_NULL( pSecurelist ))
   {
-    ZW_DEBUG_CMDCLIST_SEND_STR("\r\nCC CHECK:");
-    ZW_DEBUG_CMDCLIST_SEND_NUM(cmdClass);
-    ZW_DEBUG_CMDCLIST_SEND_NL();
-
-    /* Check cmdClass is in secure and nosecure lists */
-    if(NON_NULL( pSecurelist ))
+    if(TRUE == CheckCmdClass(cmdClass, pSecurelist, securelistLen) ||
+       COMMAND_CLASS_BASIC == cmdClass)
     {
-      if(TRUE == CheckCmdClass(cmdClass, pSecurelist, securelistLen) ||
-         COMMAND_CLASS_BASIC == cmdClass)
-      {
-        return TRUE; /*cmd is supported!*/
-      }
-    }
-
-    /*Check cmdClass is in nosecure list*/
-    if(NON_NULL( pNonSecurelist ))
-    {
-      return CheckCmdClass(cmdClass, pNonSecurelist, nonSecurelistLen);
+      return TRUE; /*cmd is supported!*/
     }
   }
-  else
+
+  if ((SECURITY_KEY_NONE == device_higest_secure_level) && (cmdClass == COMMAND_CLASS_BASIC))
   {
-    if (NON_SECURE_NODE == GetNodeSecure() && cmdClass == COMMAND_CLASS_BASIC)
-    {
-      /* Nonsecure node allways support CC Basic. */
-      return TRUE;
-    }
-
-    /*Check cmdClass is in nosecure list*/
-    if(NON_NULL( pNonSecurelist ))
-    {
-      return CheckCmdClass(cmdClass, pNonSecurelist, nonSecurelistLen);
-    }
+    /* Non-secure node always support CC Basic. */
+    return TRUE;
   }
-  ZW_DEBUG_CMDCLIST_SEND_STR("CmdClassSupported fail cmd: ");
-  ZW_DEBUG_CMDCLIST_SEND_NUM(cmdClass);
-  ZW_DEBUG_CMDCLIST_SEND_NL();
 
+  /*Check cmdClass is in non-secure list*/
+  if(NON_NULL( pNonSecurelist ))
+  {
+    return CheckCmdClass(cmdClass, pNonSecurelist, nonSecurelistLen);
+  }
   return FALSE; /* Cmd not in list*/
 }

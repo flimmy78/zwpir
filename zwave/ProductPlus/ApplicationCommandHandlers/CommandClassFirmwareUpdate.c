@@ -24,19 +24,57 @@
 #include <misc.h>
 #include "config_app.h"
 #include <ota_util.h>
-#include <event_util.h>
 #include <ZW_tx_mutex.h>
 #include <ZW_uart_api.h>
 #include <ZW_crc.h>
 #include <ZW_firmware_descriptor.h>
-#include <ZW_Firmware_bootloader_defs.h>
+#include <ZW_firmware_bootloader_defs.h>
 #include <ZW_firmware_update_nvm_api.h>
 #include <CommandClassFirmwareUpdate.h>
-
+#include <CommandClassVersion.h>
+#include <ZW_typedefs.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
+
+#ifdef ZW_DEBUG_FIRMWARE_UPDATE
+#ifdef ZW_DEBUG_UART0
+#define ZW_DEBUG_FIRMWARE_UPDATE_INIT(baud)       ZW_UART0_init(baud, TRUE, FALSE)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_BYTE(bData) ZW_UART0_tx_send_byte(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NUM(bData)  ZW_UART0_tx_send_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_WORD_NUM(bData)  ZW_UART0_tx_send_w_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NL()        ZW_UART0_tx_send_nl()
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_STR(STR)    ZW_UART0_tx_send_str(STR)
+#define ZW_DEBUG_FIRMWARE_UPDATE_TX_STATUS()      ZW_UART0_tx_active_get()
+#else
+#ifdef ZW_DEBUG_UART1
+#define ZW_DEBUG_FIRMWARE_UPDATE_INIT(baud)       ZW_UART1_init(baud, TRUE, FALSE)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_BYTE(bData) ZW_UART1_tx_send_byte(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NUM(bData)  ZW_UART1_tx_send_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_WORD_NUM(bData)  ZW_UART1_tx_send_w_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NL()        ZW_UART1_tx_send_nl()
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_STR(STR)    ZW_UART1_tx_send_str(STR)
+#define ZW_DEBUG_FIRMWARE_UPDATE_TX_STATUS()      ZW_UART1_tx_active_get()
+#else
+#define ZW_DEBUG_FIRMWARE_UPDATE_INIT(baud)       ZW_UART_init(baud, TRUE, FALSE)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_BYTE(bData) ZW_UART_tx_send_byte(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NUM(bData)  ZW_UART_tx_send_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_WORD_NUM(bData)  ZW_UART_tx_send_w_num(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NL()        ZW_UART_tx_send_nl()
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_STR(STR)    ZW_UART_tx_send_str(STR)
+#define ZW_DEBUG_FIRMWARE_UPDATE_TX_STATUS()      ZW_UART_tx_active_get()
+#endif
+#endif
+#else
+#define ZW_DEBUG_FIRMWARE_UPDATE_INIT(baud)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_BYTE(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NUM(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_WORD_NUM(bData)
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_NL()
+#define ZW_DEBUG_FIRMWARE_UPDATE_SEND_STR(STR)
+#define ZW_DEBUG_FIRMWARE_UPDATE_TX_STATUS()
+#endif
 
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
@@ -50,146 +88,200 @@
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
 
-
-
-/*============================ handleCommandClassFWUpdate ===============================
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
+received_frame_status_t
 handleCommandClassFWUpdate(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength)
 {
+  if (TRUE == Check_not_legal_response_job(rxOpt))
+  {
+    // None of the following commands support endpoint bit addressing.
+    return RECEIVED_FRAME_STATUS_FAIL;
+  }
+
   switch (pCmd->ZW_Common.cmd)
   {
-    case FIRMWARE_MD_GET_V2:
+    case FIRMWARE_MD_GET_V4:
     {
       ZW_APPLICATION_TX_BUFFER* pTxBuf = GetResponseBuffer();
-      if(NULL != pTxBuf)
+      if( NON_NULL( pTxBuf ) )
       {
-        pTxBuf->ZW_FirmwareMdReportV2Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.cmd = FIRMWARE_MD_REPORT_V2;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.manufacturerId1 = firmwareDescriptor.manufacturerID >> 8;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.manufacturerId2 = firmwareDescriptor.manufacturerID & 0xFF;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.firmwareId1 = firmwareDescriptor.firmwareID >> 8;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.firmwareId2 = firmwareDescriptor.firmwareID & 0xFF;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.checksum1 = firmwareDescriptor.checksum >> 8;
-        pTxBuf->ZW_FirmwareMdReportV2Frame.checksum2 = firmwareDescriptor.checksum & 0xFF;
+        uint8_t i;
+        uint8_t * pData;
+        TRANSMIT_OPTIONS_TYPE_SINGLE_EX * pTxOptionsEx;
+        RxToTxOptions(rxOpt, &pTxOptionsEx);
 
-        if ( FALSE == Transport_SendResponse(sourceNode,
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V4;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.cmd = FIRMWARE_MD_REPORT_V4;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.manufacturerId1 = firmwareDescriptor.manufacturerID >> 8;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.manufacturerId2 = firmwareDescriptor.manufacturerID & 0xFF;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.firmware0Id1 = (BYTE)(handleFirmWareIdGet(0) >> 8);
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.firmware0Id2 = (BYTE)(handleFirmWareIdGet(0) & 0xff);
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.firmware0Checksum1 = firmwareDescriptor.checksum >> 8;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.firmware0Checksum2 = firmwareDescriptor.checksum & 0xFF;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.firmwareUpgradable = FIRMWARE_UPGRADABLE;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.numberOfFirmwareTargets = handleNbrFirmwareVersions() - 1;
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.maxFragmentSize1 = (handleCommandClassFirmwareUpdateMaxFragmentSize() >> 8);
+        pTxBuf->ZW_FirmwareMdReport1byteV4Frame.maxFragmentSize2 = (handleCommandClassFirmwareUpdateMaxFragmentSize() & 0xFF);
+
+        pData = (uint8_t *)pTxBuf;
+
+        for (i = 1; i < handleNbrFirmwareVersions(); i++)
+        {
+          *(pData + 10 + (2 * i)) = (uint8_t)(handleFirmWareIdGet(i) >> 8);
+          *(pData + 10 + (2 * i) + 1) = (uint8_t)(handleFirmWareIdGet(i) & 0xff);
+        }
+
+        if ( ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
                (BYTE *)pTxBuf,
-               sizeof(ZW_FIRMWARE_MD_REPORT_V2_FRAME),
-               option,
+               10 + (2 * i),
+               pTxOptionsEx,
                ZCB_ResponseJobStatus))
         {
           /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
           FreeResponseBuffer();
         }
-      }
-      else
-      {
-        /*pTxBuf is occupied.. do nothing*/
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
     }
+    return RECEIVED_FRAME_STATUS_FAIL;
     break;
-    case FIRMWARE_UPDATE_MD_REPORT_V2:
+    case FIRMWARE_UPDATE_MD_REPORT_V4:
       {
         WORD crc16Result = ZW_CheckCrc16(0x1D0F, &(pCmd->ZW_Common.cmdClass), cmdLength);
-        WORD  firmwareUpdateReportNumber = ((WORD)(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.properties1 &
-                                      FIRMWARE_UPDATE_MD_REPORT_PROPERTIES1_REPORT_NUMBER_1_MASK_V2) << 8) +
-                                     (WORD)(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.reportNumber2);
+        WORD  firmwareUpdateReportNumber = ((WORD)(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.properties1 &
+                                      FIRMWARE_UPDATE_MD_REPORT_PROPERTIES1_REPORT_NUMBER_1_MASK_V4) << 8) +
+                                     (WORD)(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.reportNumber2);
         BYTE fw_actualFrameSize =  cmdLength -
                                   /* Calculate length of actual data1 field */
-                                  (sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.cmdClass) +
-                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.cmd) +
-                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.properties1) +
-                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.reportNumber2) +
-                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.checksum1) +
-                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.checksum2));
+                                  (sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.cmdClass) +
+                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.cmd) +
+                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.properties1) +
+                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.reportNumber2) +
+                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.checksum1) +
+                                   sizeof(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.checksum2));
 
 
         handleCmdClassFirmwareUpdateMdReport(crc16Result,
                                              firmwareUpdateReportNumber,
-                                             pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.properties1,
-                                             &(pCmd->ZW_FirmwareUpdateMdReport1byteV2Frame.data1),
+                                             pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.properties1,
+                                             &(pCmd->ZW_FirmwareUpdateMdReport1byteV4Frame.data1),
                                              fw_actualFrameSize);
 
 
       }
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
-    case FIRMWARE_UPDATE_MD_REQUEST_GET_V2:
+    case FIRMWARE_UPDATE_MD_REQUEST_GET_V4:
       {
         ZW_APPLICATION_TX_BUFFER* pTxBuf = GetResponseBufferCb(ZCB_CmdClassFwUpdateMdReqReport);
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
-          pTxBuf->ZW_FirmwareUpdateMdRequestReportV2Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2;
-          pTxBuf->ZW_FirmwareUpdateMdRequestReportV2Frame.cmd = FIRMWARE_UPDATE_MD_REQUEST_REPORT_V2;
-          handleCmdClassFirmwareUpdateMdReqGet( sourceNode,
-            (FW_UPDATE_GET*) &(pCmd->ZW_FirmwareUpdateMdRequestGetV2Frame.manufacturerId1),
-            &(pTxBuf->ZW_FirmwareUpdateMdRequestReportV2Frame.status));
+          BYTE fwTarget = 0;
+          WORD fragmentSize = 0;
 
-          if (!Transport_SendResponse(
-                  sourceNode,
-                  (BYTE*)pTxBuf,
-                  sizeof(ZW_FIRMWARE_UPDATE_MD_REQUEST_REPORT_V2_FRAME),
-                  option,
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX * pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
+
+          /*Get max size for V4 commands*/
+          fragmentSize = handleCommandClassFirmwareUpdateMaxFragmentSize();
+
+          /*Check V4 commands*/
+          if( (sizeof(ZW_FIRMWARE_UPDATE_MD_REQUEST_GET_V3_FRAME) == cmdLength) ||
+              (sizeof(ZW_FIRMWARE_UPDATE_MD_REQUEST_GET_V4_FRAME) == cmdLength ))
+          {
+            fwTarget = pCmd->ZW_FirmwareUpdateMdRequestGetV4Frame.firmwareTarget;
+            fragmentSize =  (((WORD)pCmd->ZW_FirmwareUpdateMdRequestGetV4Frame.fragmentSize1) << 8);
+            fragmentSize +=  (((WORD)pCmd->ZW_FirmwareUpdateMdRequestGetV4Frame.fragmentSize2) & 0xff);
+
+            /**
+             * We do not handle V4 activation field, why CC ZW_FIRMWARE_UPDATE_ACTIVATION_SET_V4_FRAME
+             * and ZW_FIRMWARE_UPDATE_ACTIVATION_STATUS_REPORT_V4_FRAME are not implemented!!
+             */
+            //if (sizeof(ZW_FIRMWARE_UPDATE_MD_REQUEST_GET_V4_FRAME) == cmdLength){}
+          }
+
+          pTxBuf->ZW_FirmwareUpdateMdRequestReportV4Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V4;
+          pTxBuf->ZW_FirmwareUpdateMdRequestReportV4Frame.cmd = FIRMWARE_UPDATE_MD_REQUEST_REPORT_V4;
+
+          if( fwTarget < handleNbrFirmwareVersions())
+          {
+            uint8_t * pData = (uint8_t *)&(pCmd->ZW_FirmwareUpdateMdRequestGetV4Frame.manufacturerId1);
+            FW_UPDATE_GET fwUpdateData;
+
+            fwUpdateData.manufacturerId = (((uint16_t)*(pData + 0)) << 8) | *(pData + 1);
+            fwUpdateData.firmwareId     = (((uint16_t)*(pData + 2)) << 8) | *(pData + 3);
+            fwUpdateData.checksum       = (((uint16_t)*(pData + 4)) << 8) | *(pData + 5);
+
+            handleCmdClassFirmwareUpdateMdReqGet(
+                rxOpt,
+                fwTarget,
+                fragmentSize,
+                &fwUpdateData,
+                &(pTxBuf->ZW_FirmwareUpdateMdRequestReportV4Frame.status));
+          }
+          else
+          {
+            /*wrong target!!*/
+            pTxBuf->ZW_FirmwareUpdateMdRequestReportV4Frame.status = FIRMWARE_UPDATE_MD_REQUEST_REPORT_NOT_UPGRADABLE_V4;
+          }
+
+          if (ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
+                  (BYTE *)pTxBuf,
+                  sizeof(ZW_FIRMWARE_UPDATE_MD_REQUEST_REPORT_V4_FRAME),
+                  pTxOptionsEx,
                   ZCB_ResponseJobStatus))
           {
             FreeResponseBuffer();
             ZCB_CmdClassFwUpdateMdReqReport(TRANSMIT_COMPLETE_FAIL);
           }
+          return RECEIVED_FRAME_STATUS_SUCCESS;
         }
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
     default:
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
 /*============================ CmdClassFirmwareUpdateMdStatusReport ===============================
 ** Function description
 ** This function...
 ** Values used for Firmware Update Md Status Report command
-** FIRMWARE_UPDATE_MD_STATUS_REPORT_UNABLE_TO_RECEIVE_WITHOUT_CHECKSUM_ERROR_V2     0x00
-** FIRMWARE_UPDATE_MD_STATUS_REPORT_UNABLE_TO_RECEIVE_V2                            0x01
-** FIRMWARE_UPDATE_MD_STATUS_REPORT_SUCCESSFULLY_V2                                 0xFF
 **
 ** Side effects:
 **
 **-------------------------------------------------------------------------*/
 JOB_STATUS
-CmdClassFirmwareUpdateMdStatusReport(BYTE destNode, BYTE status, BYTE txOption, VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+CmdClassFirmwareUpdateMdStatusReport(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  BYTE status,
+  WORD waitTime,
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult))
 {
   ZW_APPLICATION_TX_BUFFER* pTxBuf = GetRequestBuffer(pCbFunc);
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX* pTxOptionsEx = NULL;
+  RxToTxOptions(rxOpt, &pTxOptionsEx);
   /* Send status, when finished */
   if (pTxBuf != NULL)
   {
-    WORD fw_crc;
-    BYTE retVal;
-
-    retVal = (TRUE == ZW_FirmwareUpdate_NVM_isValidCRC16(&fw_crc)) ? 1 : 0;
-    pTxBuf->ZW_FirmwareUpdateMdStatusReportV2Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2;
-    pTxBuf->ZW_FirmwareUpdateMdStatusReportV2Frame.cmd = FIRMWARE_UPDATE_MD_STATUS_REPORT_V2;
-    pTxBuf->ZW_FirmwareUpdateMdStatusReportV2Frame.status = status;
-    /* Mark NVM Image Valid/Not Valid according to retVal */
-    ZW_FirmwareUpdate_NVM_Set_NEWIMAGE((FIRMWARE_UPDATE_MD_STATUS_REPORT_SUCCESSFULLY_V2 == status) ? retVal : 0);
-    if (!Transport_SendRequest(
-          destNode,
-          (BYTE*)pTxBuf,
-          sizeof(ZW_FIRMWARE_UPDATE_MD_STATUS_REPORT_V2_FRAME),
-          txOption,
-          ZCB_RequestJobStatus, FALSE))
+    pTxBuf->ZW_FirmwareUpdateMdStatusReportV4Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V4;
+    pTxBuf->ZW_FirmwareUpdateMdStatusReportV4Frame.cmd = FIRMWARE_UPDATE_MD_STATUS_REPORT_V4;
+    pTxBuf->ZW_FirmwareUpdateMdStatusReportV4Frame.status = status;
+    pTxBuf->ZW_FirmwareUpdateMdStatusReportV4Frame.waittime1 = (waitTime >> 8);
+    pTxBuf->ZW_FirmwareUpdateMdStatusReportV4Frame.waittime2 = (waitTime & 0xff);
+    if(ZW_TX_IN_PROGRESS != Transport_SendRequestEP(
+        (BYTE *)pTxBuf,
+        sizeof(ZW_FIRMWARE_UPDATE_MD_STATUS_REPORT_V4_FRAME),
+        pTxOptionsEx,
+        ZCB_RequestJobStatus))
     {
-      pCbFunc(0xFF);
+      TRANSMISSION_RESULT result = {0xff, TRANSMIT_COMPLETE_FAIL, TRANSMISSION_RESULT_FINISHED};
+      pCbFunc(&result);
       FreeRequestBuffer();
       return JOB_STATUS_BUSY;
     }
@@ -208,25 +300,29 @@ CmdClassFirmwareUpdateMdStatusReport(BYTE destNode, BYTE status, BYTE txOption, 
 **
 **-------------------------------------------------------------------------*/
 JOB_STATUS
-CmdClassFirmwareUpdateMdGet( BYTE destNode, WORD firmwareUpdateReportNumber, BYTE txOption)
+CmdClassFirmwareUpdateMdGet(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  WORD firmwareUpdateReportNumber)
 {
   ZW_APPLICATION_TX_BUFFER* pTxBuf = GetRequestBuffer(NULL);
-  ZW_DEBUG_SEND_STR("CmdClassFirmwareUpdateMdGet");
-  ZW_DEBUG_SEND_WORD_NUM(firmwareUpdateReportNumber);
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX* pTxOptionsEx = NULL;
+  RxToTxOptions(rxOpt, &pTxOptionsEx);
+
+  ZW_DEBUG_FIRMWARE_UPDATE_SEND_STR("CmdClassFirmwareUpdateMdGet");
+  ZW_DEBUG_FIRMWARE_UPDATE_SEND_WORD_NUM(firmwareUpdateReportNumber);
   if (pTxBuf != NULL)
   {
   /* Ask for the next report */
-    pTxBuf->ZW_FirmwareUpdateMdGetV2Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2;
-    pTxBuf->ZW_FirmwareUpdateMdGetV2Frame.cmd = FIRMWARE_UPDATE_MD_GET_V2;
-    pTxBuf->ZW_FirmwareUpdateMdGetV2Frame.numberOfReports = 1;
-    pTxBuf->ZW_FirmwareUpdateMdGetV2Frame.properties1 = firmwareUpdateReportNumber >> 8;
-    pTxBuf->ZW_FirmwareUpdateMdGetV2Frame.reportNumber2 = firmwareUpdateReportNumber & 0xFF;
-    if (!Transport_SendRequest(
-           destNode,
-           (BYTE*)pTxBuf,
-           sizeof(ZW_FIRMWARE_UPDATE_MD_GET_V2_FRAME),
-           txOption,
-           ZCB_RequestJobStatus, FALSE))
+    pTxBuf->ZW_FirmwareUpdateMdGetV4Frame.cmdClass = COMMAND_CLASS_FIRMWARE_UPDATE_MD_V4;
+    pTxBuf->ZW_FirmwareUpdateMdGetV4Frame.cmd = FIRMWARE_UPDATE_MD_GET_V4;
+    pTxBuf->ZW_FirmwareUpdateMdGetV4Frame.numberOfReports = 1;
+    pTxBuf->ZW_FirmwareUpdateMdGetV4Frame.properties1 = firmwareUpdateReportNumber >> 8;
+    pTxBuf->ZW_FirmwareUpdateMdGetV4Frame.reportNumber2 = firmwareUpdateReportNumber & 0xFF;
+    if(ZW_TX_IN_PROGRESS != Transport_SendRequestEP(
+        (BYTE *)pTxBuf,
+        sizeof(ZW_FIRMWARE_UPDATE_MD_GET_V4_FRAME),
+        pTxOptionsEx,
+        ZCB_RequestJobStatus))
     {
       FreeRequestBuffer();
       return JOB_STATUS_BUSY;
@@ -234,4 +330,6 @@ CmdClassFirmwareUpdateMdGet( BYTE destNode, WORD firmwareUpdateReportNumber, BYT
     return JOB_STATUS_SUCCESS;
   }
   return JOB_STATUS_BUSY;
+
+
 }

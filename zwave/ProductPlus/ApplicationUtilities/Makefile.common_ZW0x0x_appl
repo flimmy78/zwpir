@@ -1,6 +1,6 @@
 #****************************************************************************
 #
-#  Copyright (c) 2001-2013
+#  Copyright (c) 2001-2014
 #  Sigma Designs, Inc.
 #  All Rights Reserved
 #
@@ -12,9 +12,9 @@
 #               It also conatins the compiler and assempler options.
 #  Author:   Samer Seoud
 #
-#  Last Changed By:  $Author: psh $
-#  Revision:         $Revision: 32673 $
-#  Last Changed:     $Date: 2016-01-05 16:40:12 +0100 (ti, 05 jan 2016) $
+#  Last Changed By:  $Author: jsi $
+#  Revision:         $Revision: 35063 $
+#  Last Changed:     $Date: 2016-12-21 15:46:14 +0100 (on, 21 dec 2016) $
 #
 #****************************************************************************
 
@@ -61,7 +61,7 @@ endif
 
 # The command to make dependencies from the headerfiles
 # included by a file.
-INCDEP=python $(subst \,\\,$(TOOLSDIR)\IncDep\incdep.py)
+INCDEP=python15 $(subst \,\\,$(TOOLSDIR)\IncDep\incdep.py)
 
 ###############
 # Directories #
@@ -95,7 +95,18 @@ A51INC+=;
 endif
 A51INC+=$(KEILPATH)\inc;$(ZWLIBROOT)\include;$(TARGETDIR)\Rels
 
-all: $(TARGET).hex
+ifneq ($(BOOTLOADER_ENABLED),)
+TARGETHEXFILE:=$(TARGET).ota
+TARGETCOMPRESSEDHEXFILE:=$(TARGET).otz
+TARGETHEXFILEWITHBOOTLOADER:=$(TARGET)_WITH_BOOTLOADER.hex
+
+all: $(TARGETCOMPRESSEDHEXFILE) $(TARGETHEXFILEWITHBOOTLOADER)
+else
+TARGETHEXFILE:=$(TARGET).hex
+all: $(TARGETHEXFILE)
+endif
+
+
 
 ifneq ($(LIB),)
 ZW_LIBRARY:=$(LIB)
@@ -109,47 +120,48 @@ endif
 
 ## Check if the target mode us used then inserted in the defines strings.
 ifneq ($(TARGET_MODE),)
-ifeq ($(CDEFINES),)
-CDEFINES=$(TARGET_MODE),
-else
-CDEFINES+=$(TARGET_MODE),
+ifneq ($(CDEFINES),)
+CDEFINES+=,
 endif
-ifeq ($(ADEFINES),)
-ADEFINES=$(TARGET_MODE),
-else
-ADEFINES+=$(TARGET_MODE),
+CDEFINES+=\
+ $(TARGET_MODE)
+ifneq ($(ADEFINES),)
+ADEFINES+=,
 endif
+ADEFINES+=\
+ $(TARGET_MODE)
 endif
 
 ifneq ($(BOOTLOADER_ENABLED),)
 ifeq ($(findstring BOOTLOADER_ENABLED, $(CDEFINES)),)
-ifeq ($(CDEFINES),)
-CDEFINES=BOOTLOADER_ENABLED,
-else
-CDEFINES+=BOOTLOADER_ENABLED,
+ifneq ($(CDEFINES),)
+CDEFINES+=,
 endif
-ifeq ($(ADEFINES),)
-ADEFINES=BOOTLOADER_ENABLED,
-else
-ADEFINES+=BOOTLOADER_ENABLED,
+CDEFINES+=\
+ BOOTLOADER_ENABLED
+ifneq ($(ADEFINES),)
+ADEFINES+=,
 endif
+ADEFINES+=\
+ BOOTLOADER_ENABLED
 endif
 endif
 
 ## Check if we are using extended CX51 compiler if so then we need to define __C51__
 ifeq ($(findstring "CX51","$(CC)"),"CX51")
-ifeq ($(CDEFINES),)
-CDEFINES=__C51__,
-else
-CDEFINES+=__C51__,
+ifneq ($(CDEFINES),)
+CDEFINES+=,
 endif
+CDEFINES+=\
+ __C51__
 endif
 
-ifeq ($(ADEFINES),)
-ADEFINES=
-else
-ADEFINES+=
+## Add library to CDEFINE and ADEFINE
+ifneq ($(CDEFINES),)
+CDEFINES+=,
 endif
+CDEFINES+=\
+ $(ZW_LIBRARY)
 
 #----- Chip memory layout -----
 #
@@ -158,10 +170,17 @@ INT_VEC:=0
 #----- Chip memory layout specifications for the ZW050x -----
 ifeq ($(CHIP),ZW050x)
 
+#----- slave_routing needs more NONZERO resources
 XDATA_NONZERO_VARS_ZW_BEGIN=0X1200
-XDATA_NONZERO_VARS_ZW_END=0X123F
-XDATA_NONZERO_VARS_APP_BEGIN=0X1240
+ifeq ($(LIBRARY), slave_routing)
+XDATA_NONZERO_VARS_ZW_END=0X126F
+XDATA_NONZERO_VARS_APP_BEGIN=0X1270
+else
+XDATA_NONZERO_VARS_ZW_END=0X1254
+XDATA_NONZERO_VARS_APP_BEGIN=0X1255
+endif
 XDATA_NONZERO_VARS_APP_END=0X127F
+
 
 ifneq ($(BOOTLOADER),)
 INT_VEC:=0x0000
@@ -184,9 +203,7 @@ CLASSSPEC:=CLASSES(BIT($(BITDATAAREA)),\
                    XDATA_NON_ZERO_VARS_ZW (X:$(XDATA_NONZERO_VARS_ZW_BEGIN)-X:$(XDATA_NONZERO_VARS_ZW_END)),\
                    XDATA_NON_ZERO_VARS_APP (X:$(XDATA_NONZERO_VARS_APP_BEGIN)-X:$(XDATA_NONZERO_VARS_APP_END)),\
                    CODE($(CODEAREA)),\
-                   CONST($(CODEAREA))) \
-                   SEGMENTS(?CO?ZW_BOOTLOADER_CAPABILITIES(C:0x17FA))
-
+                   CONST($(CODEAREA)))
 
 else #/* ifneq ($(BOOTLOADER),) */
 
@@ -219,18 +236,18 @@ XDATAAREA=X:0X2000-X:0X4FFF
 XDATAUPPERAREA=X:0X2000-X:0X4FFF
 XDATALOWERAREA=X:0X0000-X:0X0FFF
 ifeq ($(ZW_LIBRARY),slave_routing)
-HDATALIBAREA=X:0X010000-X:0X0100BE
-HDATAAREA=X:0X0100BF-X:0X0100FE
+HDATALIBAREA=X:0X010000-X:0X0100FE
+HDATAAREA=X:0X010000-X:0X0100FE
 else
 HDATALIBAREA=X:0X010000-X:0X01FFFF
-ifneq ($(findstring _16, $(LIB)),)
-HDATAAREA=X:0X013000-X:0X013FFF
-else
-HDATAAREA=X:0X016000-X:0X01FFFF
+HDATAAREA=X:0X010000-X:0X01FFFF
 endif
-endif
+# Locate nvmUpdateDescriptors in a separate area of code space to keep them together
+# They need to be kept together, because the are referenced as an array of nvmUpdateDescriptors.
+# The user class for this is named: CONST_NVM
+CONSTNVMAREA=C:0X7F7E-C:0X7FAF
 HCONSTAREA=C:0X108000-C:0X10BFFF
-CODEAREA=C:$(CODEBEGIN)-C:$(CODEEND)
+CODEAREA=C:$(CODEBEGIN)-C:0X7F7F,C:0X7FB0-C:$(CODEEND)
 
 # Memory classes specification for LFLAGS:
 CLASSSPEC:=CLASSES(BIT($(BITDATAAREA)),\
@@ -245,6 +262,7 @@ CLASSSPEC:=CLASSES(BIT($(BITDATAAREA)),\
                    XDATA_NON_ZERO_VARS_ZW (X:$(XDATA_NONZERO_VARS_ZW_BEGIN)-X:$(XDATA_NONZERO_VARS_ZW_END)),\
                    XDATA_NON_ZERO_VARS_APP (X:$(XDATA_NONZERO_VARS_APP_BEGIN)-X:$(XDATA_NONZERO_VARS_APP_END)),\
                    CODE($(CODEAREA)),\
+                   CONST_NVM($(CONSTNVMAREA)),\
                    CONST($(CODEAREA)))
 
 # RFCONSTLOC=?CO?ZW_PHY_RF_050X_CONST (C:0X0100)
@@ -285,9 +303,15 @@ endif #/* ifeq ($(CHIP),ZW050x) */
 
 #----- Build segment specification for fixed address segments for LFLAGS
 # Any fixed segments to specify ?
-ifneq ($(RFTABLELOC)$(RFCONSTLOC)$(NVMCONSTLOC)$(FIRMWAREDESCRIPTORLOC)$(BANKMARKERSLOC)$(APP_RFSETUPLOC)$(PROTOCOL_NVMLOC),)
+ifneq ($(NVMCONSTLOC)$(RFTABLELOC)$(RFCONSTLOC)$(FIRMWAREDESCRIPTORLOC)$(BANKMARKERSLOC)$(APP_RFSETUPLOC)$(PROTOCOL_NVMLOC)$(APPLICATION_NVMLOC),)
 # Begin segment specification with "SEGMENTS("
 SEGMENTSPEC:=SEGMENTS(
+ifneq ($(NVMCONSTLOC),)
+ifneq "$(SEGMENTSPEC)" "SEGMENTS("
+SEGMENTSPEC:=$(SEGMENTSPEC),
+endif
+SEGMENTSPEC:=$(SEGMENTSPEC)$(NVMCONSTLOC)
+endif
 # Any RF setup table to locate at a fixed address ?
 ifneq ($(RFTABLELOC),)
 # Do we need a comma-separator here ? Not if this is first segment locator.
@@ -314,11 +338,11 @@ SEGMENTSPEC:=$(SEGMENTSPEC),
 endif
 SEGMENTSPEC:=$(SEGMENTSPEC)$(PROTOCOL_NVMLOC)
 endif
-ifneq ($(NVMCONSTLOC),)
+ifneq ($(APPLICATION_NVMLOC),)
 ifneq "$(SEGMENTSPEC)" "SEGMENTS("
 SEGMENTSPEC:=$(SEGMENTSPEC),
 endif
-SEGMENTSPEC:=$(SEGMENTSPEC)$(NVMCONSTLOC)
+SEGMENTSPEC:=$(SEGMENTSPEC)$(APPLICATION_NVMLOC)
 endif
 ifneq ($(XDATATAILLOC),)
 ifneq "$(SEGMENTSPEC)" "SEGMENTS("
@@ -342,12 +366,26 @@ endif
 SEGMENTSPEC:=$(SEGMENTSPEC))
 endif
 
-CFLAGS=WL (1) DB OA OE LA CD SB LC NOIP NOCO IV($(INT_VEC)) OT(11,SIZE) ID($(C51INC)) CODE SYMBOLS
-AFLAGS=ID($(A51INC)) NORB XR
+CFLAGS=\
+ CODE\
+ WARNINGLEVEL(2)\
+ OBJECTADVANCED\
+ LARGE\
+ LISTINCLUDE\
+ NOINTPROMOTE\
+ NOCOND\
+ INTVECTOR($(INT_VEC))\
+ OPTIMIZE(11,SIZE)\
+ INCDIR($(C51INC))\
+ SYMBOLS
+
+AFLAGS=\
+ INCDIR($(A51INC))\
+ NOREGISTERBANK\
+ XREF
 
 ifeq ($(CODE_MEMORY_MODE),banking)
 LFLAGS=\
- CODE\
  NOOVERLAY\
  DISABLEWARNING (8, 13, 16, 25, 47)\
  PRINT($(RELSDIR)\$(TARGET).map)\
@@ -392,7 +430,7 @@ RULESRC=$(subst /,\,$<)
 %.obj : %.c
 	@echo Compiling $(RULESRC)
 	@echo $(RULESRC) $(CFLAGS) > $(RELSDIR)\$(subst .obj,.cmd,$@)
-	@echo DF($(CDEFINES),$(subst .obj,,$@),$(ZW_LIBRARY)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
+	@echo DF($(CDEFINES),$(subst .obj,,$@)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo PR($(LISTDIR)\$(subst .obj,.lst,$@)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo OJ($(RELSDIR)\$@) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@$(CC) @$(subst \,\\,$(RELSDIR)\$(subst .obj,.cmd,$@))
@@ -401,7 +439,7 @@ RULESRC=$(subst /,\,$<)
 %.obj : %.C
 	@echo Compiling $(RULESRC)
 	@echo $(RULESRC) $(CFLAGS) > $(RELSDIR)\$(subst .obj,.cmd,$@)
-	@echo DF($(CDEFINES),$(subst .obj,,$@),$(ZW_LIBRARY)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
+	@echo DF($(CDEFINES),$(subst .obj,,$@)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo PR($(LISTDIR)\$(subst .obj,.lst,$@)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo OJ($(RELSDIR)\$@) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@$(CC) @$(subst \,\\,$(RELSDIR)\$(subst .obj,.cmd,$@))
@@ -411,7 +449,7 @@ RULESRC=$(subst /,\,$<)
 %.obj : %.a51
 	@echo Assembling $(RULESRC)
 	@echo $(RULESRC) > $(RELSDIR)\$(subst .obj,.cmd,$@)
-	@echo DF($(ADEFINES),$(ZW_LIBRARY)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
+	@echo DF($(ADEFINES)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo $(AFLAGS) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo OJ($(RELSDIR)\$@) >> $(RELSDIR)\$(subst .obj,.cmd,$@)
 	@echo PR($(LISTDIR)\$(@:.obj=.lst)) >> $(RELSDIR)\$(subst .obj,.cmd,$@)

@@ -332,12 +332,22 @@ ifeq ($(UVISION),1)
 all: $(TARGET).uvproj
 endif
 
-$(subst build,build_prj,$(TARGETDIR))\$(TARGET).hex: $(TARGET).uvproj
+ifneq ($(BOOTLOADER_ENABLED),)
+ifneq ($(OTACOMPRESS),)
+HEXFILE_EXTENSION:=otz
+else
+HEXFILE_EXTENSION:=ota
+endif
+else
+HEXFILE_EXTENSION:=hex
+endif
+
+$(subst build,build_prj,$(TARGETDIR))\$(TARGET).$(HEXFILE_EXTENSION): $(TARGET).uvproj
 	$(KEILPATH)\..\UV4\UV4 -j0 -r $(TARGET).uvproj -o $(TARGET)_uvproj_Build_Output.log
-	@fc $(subst build,build_prj,$(TARGETDIR))\$(TARGET).hex $(TARGETDIR)\$(TARGET).hex | FIND "FC: no dif" > nul
+	@fc $(subst build,build_prj,$(TARGETDIR))\$(TARGET).$(HEXFILE_EXTENSION) $(TARGETDIR)\$(TARGET).$(HEXFILE_EXTENSION) | FIND "FC: no dif" > nul
 
 # "uVision" project build is optional.
 # use "make UVISION=2 ZWxxxxx...."
 ifeq ($(UVISION),2)
-all: $(TARGET).uvproj $(subst build,build_prj,$(TARGETDIR))\$(TARGET).hex
+all: $(TARGET).uvproj $(subst build,build_prj,$(TARGETDIR))\$(TARGET).$(HEXFILE_EXTENSION)
 endif

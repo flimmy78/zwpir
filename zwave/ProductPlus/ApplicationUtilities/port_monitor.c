@@ -29,6 +29,7 @@
 #include <ZW_portpin_api.h>
 #include <port_monitor.h>
 #include <ZW_ev_scheduler.h>
+#include <misc.h>
 
 #include <ZW_uart_api.h>
 #include <ZW_debug_api.h>
@@ -198,7 +199,7 @@ ZW_PortMonitorInit( VOID_CALLBACKFUNC(pEventHandler)(WORD, XBYTE*, BYTE)) /* cal
 
   /*Debug info*/
   ZW_DEBUG_SEND_STR("PortMonInit:");
-  if(NULL != pEventHandler)
+  if(NON_NULL(pEventHandler))
   {
     ZW_DEBUG_SEND_STR("Enable");
   }
@@ -210,13 +211,13 @@ ZW_PortMonitorInit( VOID_CALLBACKFUNC(pEventHandler)(WORD, XBYTE*, BYTE)) /* cal
 }
 
 
-/*==============================   ZW_PortDebounceMonitor     ===============
+/*==============================   ZCB_PortDebounceMonitor     ===============
 ** Function used to debounce check
 **
 **    Side effects:
 **
 **--------------------------------------------------------------------------*/
-void ZW_PortDebounceMonitor(void)
+PCB(ZCB_PortDebounceMonitor)(void)
 {
   if(2 < myPortMonitor.debounceCount++)
   {
@@ -254,10 +255,9 @@ void ZW_PortDebounceMonitor(void)
 **    Side effects:
 **
 **--------------------------------------------------------------------------*/
-void
-ZW_PortMonitor(void)
+PCB(ZCB_PortMonitor)(void)
 {
-  if( NULL != myPortMonitor.pEventHandler)
+  if(NON_NULL( myPortMonitor.pEventHandler ))
   {
     portR[0] = ZW_PortGet(PORTPIN_P0) & (myPortMonitor.portIn[0] | myPortMonitor.portOut[0]);
     portR[1] = ZW_PortGet(PORTPIN_P1) & (myPortMonitor.portIn[1] | myPortMonitor.portOut[1]);
@@ -300,8 +300,8 @@ ZW_PortMonitor(void)
           /*reset count*/
           myPortMonitor.debounceCount = 0;
 
-          /*Add ZW_PortDebounceMonitor to eventScheduler*/
-          myPortMonitor.debounceHandle = EventSchedulerAdd(&ZW_PortDebounceMonitor);
+          /*Add ZCB_PortDebounceMonitor to eventScheduler*/
+          myPortMonitor.debounceHandle = EventSchedulerAdd(&ZCB_PortDebounceMonitor);
         }
         else
         {
@@ -420,7 +420,7 @@ ZW_PortMonitorPinIn(
   if((NULL != myPortMonitor.pEventHandler) & (0 == myPortMonitor.monitorHandle))
   {
     /*Add PortMonitor to eventScheduler*/
-    myPortMonitor.monitorHandle = EventSchedulerAdd(&ZW_PortMonitor);
+    myPortMonitor.monitorHandle = EventSchedulerAdd(&ZCB_PortMonitor);
   }
 
   ZW_DEBUG_PORT_MON_SEND_STR("monitorHandle=");
@@ -466,7 +466,7 @@ ZW_PortMonitorPinOut(
   if((NULL != myPortMonitor.pEventHandler) & (0 == myPortMonitor.monitorHandle))
   {
     /*Add PortMonitor to eventScheduler*/
-    myPortMonitor.monitorHandle = EventSchedulerAdd(&ZW_PortMonitor);
+    myPortMonitor.monitorHandle = EventSchedulerAdd(&ZCB_PortMonitor);
   }
   ZW_DEBUG_PORT_MON_SEND_STR("monitorHandle=");
   ZW_DEBUG_PORT_MON_SEND_NUM(myPortMonitor.monitorHandle);

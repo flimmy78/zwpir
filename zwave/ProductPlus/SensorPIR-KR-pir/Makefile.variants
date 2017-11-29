@@ -9,20 +9,6 @@ else
 BOOT_HELP:=^ "BOOT=BOOTLOADER_ENABLED"
 endif
 #
-# If BOARD is defined, indicate so
-ifneq ($(BOARD),)
-BOARD_APPENDIX:=_BOARD
-else
-BOARD_HELP:=^ "BOARD=ZDP03A"
-endif
-#
-# If HOST_INTERFACE is defined, indicate so
-ifneq ($(HOST_INTERFACE),)
-HOST_INTERFACE_APPENDIX:=_HOST_INTERFACE
-else
-HOST_INTERFACE_HELP:=^ "HOST_INTERFACE=UART"
-endif
-#
 # If LIBRARY is defined, indicate so
 ifneq ($(LIBRARY),)
 LIBRARY_APPENDIX:=_LIBRARY
@@ -65,8 +51,8 @@ else
 WATCHDOG_HELP:=^ "WATCHDOG=WATCHDOG_DISABLED"
 endif
 #
-TARGET_IN:=TARGET_OUT$(BOOT_APPENDIX)$(BOARD_APPENDIX)$(HOST_INTERFACE_APPENDIX)$(LIBRARY_APPENDIX)$(FREQUENCY_APPENDIX)$(CODE_MEMORY_MODE_APPENDIX)$(SENSOR_TYPE_APPENDIX)$(CHIP_APPENDIX)$(WATCHDOG_APPENDIX)
-TARGET_OUT:=TARGET_OUT_BOOT_BOARD_HOST_INTERFACE_LIBRARY_FREQUENCY_CODE_MEMORY_MODE_SENSOR_TYPE_CHIP_WATCHDOG
+TARGET_IN:=TARGET_OUT$(BOOT_APPENDIX)$(LIBRARY_APPENDIX)$(FREQUENCY_APPENDIX)$(CODE_MEMORY_MODE_APPENDIX)$(SENSOR_TYPE_APPENDIX)$(CHIP_APPENDIX)$(WATCHDOG_APPENDIX)
+TARGET_OUT:=TARGET_OUT_BOOT_LIBRARY_FREQUENCY_CODE_MEMORY_MODE_SENSOR_TYPE_CHIP_WATCHDOG
 #---------------------------------------------------------------------------------------------------------------------------
 # This is the heart of the recursion engine.
 # For every parameter that is not defined, a list of values will be walked through.
@@ -76,16 +62,6 @@ TARGET_OUT:=TARGET_OUT_BOOT_BOARD_HOST_INTERFACE_LIBRARY_FREQUENCY_CODE_MEMORY_M
 ifeq ($(BOOT),)
 $(TARGET_IN):
 	@for /F "usebackq" %%i in (`echo $(LIST_OF_BOOT)^| $(SED) "s/ /\n/g"`) do if not errorlevel 1 $(MAKE) --no-print-directory "BOOT=%%i"
-else
-# If BOARD is not specified like MK "BOARD=ZDP03A" ...., then make for all BOARD in LIST_OF_BOARD.
-ifeq ($(BOARD),)
-$(TARGET_IN):
-	@for /F "usebackq" %%i in (`echo $(LIST_OF_BOARD)^| $(SED) "s/ /\n/g"`) do if not errorlevel 1 $(MAKE) --no-print-directory "BOARD=%%i"
-else
-# If HOST_INTERFACE is not specified like MK "HOST_INTERFACE=UART" ...., then make for all HOST_INTERFACE in LIST_OF_HOST_INTERFACE.
-ifeq ($(HOST_INTERFACE),)
-$(TARGET_IN):
-	@for /F "usebackq" %%i in (`echo $(LIST_OF_HOST_INTERFACE)^| $(SED) "s/ /\n/g"`) do if not errorlevel 1 $(MAKE) --no-print-directory "HOST_INTERFACE=%%i"
 else
 # If LIBRARY is not specified like MK "LIBRARY=controller_static" ...., then make for all LIBRARY in LIST_OF_LIBRARY.
 ifeq ($(LIBRARY),)
@@ -124,29 +100,19 @@ endif
 endif
 endif
 endif
-endif
-endif
 #---------------------------------------------------------------------------------------------------------------------------
 # For every parameter, which is not defined, list help for it.
 help:
 	@echo SYNOPSIS:
 ifneq ($(oldpath),)
-	@echo  ^> mk$(BOOT_HELP)$(BOARD_HELP)$(HOST_INTERFACE_HELP)$(LIBRARY_HELP)$(FREQUENCY_HELP)$(CODE_MEMORY_MODE_HELP)$(SENSOR_TYPE_HELP)$(CHIP_HELP)$(WATCHDOG_HELP) ....
+	@echo  ^> mk$(BOOT_HELP)$(LIBRARY_HELP)$(FREQUENCY_HELP)$(CODE_MEMORY_MODE_HELP)$(SENSOR_TYPE_HELP)$(CHIP_HELP)$(WATCHDOG_HELP) ....
 else
-	@echo  ^> make$(subst ",,$(BOOT_HELP)$(BOARD_HELP)$(HOST_INTERFACE_HELP)$(LIBRARY_HELP)$(FREQUENCY_HELP)$(CODE_MEMORY_MODE_HELP)$(SENSOR_TYPE_HELP)$(CHIP_HELP)$(WATCHDOG_HELP)) ....
+	@echo  ^> make$(subst ",,$(BOOT_HELP)$(LIBRARY_HELP)$(FREQUENCY_HELP)$(CODE_MEMORY_MODE_HELP)$(SENSOR_TYPE_HELP)$(CHIP_HELP)$(WATCHDOG_HELP)) ....
 endif
 	@echo -
 ifneq ($(BOOT_HELP),)
 	@echo List of available BOOT:
 	@echo         $(LIST_OF_BOOT)
-endif
-ifneq ($(BOARD_HELP),)
-	@echo List of available BOARD:
-	@echo         $(LIST_OF_BOARD)
-endif
-ifneq ($(HOST_INTERFACE_HELP),)
-	@echo List of available HOST_INTERFACE:
-	@echo         $(LIST_OF_HOST_INTERFACE)
 endif
 ifneq ($(LIBRARY_HELP),)
 	@echo List of available LIBRARY:
@@ -175,7 +141,7 @@ endif
 ##############################################################################################################
 # Uniform target for all combinations of parameters
 #
-$(TARGET_OUT):MAKELINE=$(APP) $(BOOT_OPTION) $(BOARD_OPTION) $(HOST_INTERFACE_OPTION) $(LIBRARY_OPTION) $(FREQUENCY_OPTION) $(CODE_MEMORY_MODE_OPTION) $(SENSOR_TYPE_OPTION) $(CHIP_OPTION) $(WATCHDOG_OPTION)
+$(TARGET_OUT):MAKELINE=$(APP) $(BOOT_OPTION) $(LIBRARY_OPTION) $(FREQUENCY_OPTION) $(CODE_MEMORY_MODE_OPTION) $(SENSOR_TYPE_OPTION) $(CHIP_OPTION) $(WATCHDOG_OPTION)
 $(TARGET_OUT):
 	$(MAKE) $(MAKEOPTS) . $(MAKELINE) prerequisites
 	$(MAKE) $(MAKEOPTS) . $(MAKELINE) depend

@@ -28,7 +28,9 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
-#include <ZW_tx_mutex.h>
+#include <CommandClass.h>
+#include <agi.h>
+
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
@@ -41,8 +43,8 @@
 /**
  * User ID Status.
  * ---------------
- * The User ID Status field indicates the state of the User Identifier. All 
- * other values not mentioned in below list are reserved for future 
+ * The User ID Status field indicates the state of the User Identifier. All
+ * other values not mentioned in below list are reserved for future
  * implementation.
  * Hex | Description
  * ----|---------------------------
@@ -51,120 +53,121 @@
  *  02 | Reserved by administrator
  *  FE | Status not available
  */
-typedef enum 
+typedef enum
 {
   USER_ID_AVAILBLE = 0x00, /**< Available (not set)*/
   USER_ID_OCCUPIED = 0x01, /**< Occupied*/
   USER_ID_RESERVED = 0x02, /**< Reserved by administrator*/
-  USER_ID_STATUS_COUNT,
   USER_ID_NO_STATUS = 0xFE /**<	Status not available*/
 } USER_ID_STATUS;
 
-
-
-
 /**
- * User Code Set Command (SDS11060.doc) define max 10 ASCII digts
+ * Minimum length of a user code as defined in SDS12652.
  */
 #define USERCODE_MIN_LEN 4
-#define USERCODE_MAX_LEN 10
 
+/**
+ * Maximum length of a user code as defined in SDS12652.
+ */
+#define USERCODE_MAX_LEN 10
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
 
 /****************************************************************************/
 /*                           EXPORTED FUNCTIONS                             */
 /****************************************************************************/
 
-/** 
- * @brief handleCommandClassUserCodeSet
- * The User Code Set Command used to set a User Code in the device.
- * @param identifier User Identifier. 
- * @param id user Id status.
- * @param pUserCode pointer to UserCode data.
- * @param len UserCode data.
- * @return none.
+/**
+ * @brief The User Code Set Command used to set a User Code in the device.
+ * @param[in] identifier User Identifier.
+ * @param[in] id user Id status.
+ * @param[in] pUserCode pointer to UserCode data.
+ * @param[in] len UserCode data.
+ * @param[in] endpoint is the destination endpoint
  */
-extern BOOL
+extern void
 handleCommandClassUserCodeSet(
   BYTE identifier,
   USER_ID_STATUS id,
   BYTE* pUserCode,
-  BYTE len);
+  BYTE len,
+  BYTE endpoint );
 
-/** 
- * @brief handleCommandClassUserCodeIdGet
- * The User Code Get ID.
- * @param identifier User Identifier.
- * @param pId pointer to return Id.
+/**
+ * @brief The User Code Get ID.
+ * @param[in] identifier User Identifier.
+ * @param[in] pId pointer to return Id.
+ * @param[in] endpoint is the destination endpoint
  * @return status valid boolean.
  */
-extern BOOL
-handleCommandClassUserCodeIdGet(
+extern BOOL handleCommandClassUserCodeIdGet(
   BYTE identifier,
-  USER_ID_STATUS* pId);
+  USER_ID_STATUS* pId,
+  BYTE endpoint );
 
 
-/** 
- * @brief handleCommandClassUserCodeDataReport
- * The User Code Report Command can be used by e.g. a door lock device to send a 
+/**
+ * @brief The User Code Report Command can be used by e.g. a door lock device to send a
  * report either unsolicited or requested by the User Code Get Command.
- * @param identifier User Identifier. 
- * @param pUserCode pointer to UserCode data.
- * @param len UserCode data.
+ * @param[in] identifier User Identifier.
+ * @param[out] pUserCode pointer to UserCode data.
+ * @param[out] pLen length UserCode data.
+ * @param[in] endpoint is the destination endpoint
  * @return status valid boolean.
  */
-extern BOOL
-handleCommandClassUserCodeReport(
+extern BOOL handleCommandClassUserCodeReport(
   BYTE identifier,
   BYTE* pUserCode,
-  BYTE *pLen);
+  BYTE *pLen,
+  BYTE endpoint );
 
 
-/** 
- * @brief handleCommandClassUserCodeUsersNumberReport
- * The Users Number Report Command used to report the maximum number of USER CODES 
+/**
+ * @brief The Users Number Report Command used to report the maximum number of USER CODES
  * the given node supports. The Users Number Report Command can be send requested
  * by the Users Number Get Command.
+ * @param[in] endpoint is the destination endpoint
  * @return maximum number of USER CODES.
  */
-extern BYTE
-handleCommandClassUserCodeUsersNumberReport(
-  void);
+extern BYTE handleCommandClassUserCodeUsersNumberReport( BYTE endpoint );
 
-/** 
- * @brief handleCommandClassUserCode
- * @param option IN Frame header info.
- * @param sourceNode IN Command sender Node ID.
- * @param pCmd IN Payload from the received frame, the union should be used to access 
- * the fields.
- * @param cmdLength IN Number of command bytes including the command.
- * @return none.
+/**
+ * @brief Handler for command class User Code
+ * @param[in] rxOpt receive options of type RECEIVE_OPTIONS_TYPE_EX
+ * @param[in] pCmd Payload from the received frame
+ * @param cmdLength IN Number of command bytes including the command
+ * @return receive frame status.
  */
-void
-handleCommandClassUserCode(
-  BYTE  option,                 
-  BYTE  sourceNode,              
+received_frame_status_t handleCommandClassUserCode(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
   ZW_APPLICATION_TX_BUFFER *pCmd,
-  BYTE   cmdLength);               
+  BYTE cmdLength);
 
 
-/** 
- * @brief CmdClassUserCodeSupportReport
- * Comment function...
- * @param par description..
- * @return enum JOB_STATUS
+/**
+ * @brief Send a Command Class User code support report
+ * @param[in] pProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
+ * @param[in] userIdentifier user identifier
+ * @param[in] userIdStatus user Id status
+ * @param[in] pUserCode user code
+ * @param[in] userCodeLen length of user code
+ * @param[out] pCallback callback function returning status destination node receive job.
+ * @return status on the job.
  */
 JOB_STATUS
 CmdClassUserCodeSupportReport(
-  BYTE destNode, 
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
   BYTE userIdentifier,
   BYTE userIdStatus,
   BYTE* pUserCode,
   BYTE userCodeLen,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val));
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult));
 
 #endif /* _COMMANDCLASSUSERCODE_H_ */
+

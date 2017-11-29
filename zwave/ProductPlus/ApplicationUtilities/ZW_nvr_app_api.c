@@ -20,7 +20,7 @@
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
 #include <ZW_typedefs.h>
-#include <ZW_FLASH_api.h>
+#include <ZW_flash_api.h>
 #include <ZW_nvr_api.h>
 
 /****************************************************************************/
@@ -53,19 +53,6 @@
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
 
-
-
-
-/** 
- * @brief ZW_NVRGetValue
- *    Get a value from the NVR flash page application area. There is no CRC 
- *    protection of NVR application area!
- *
- * @param bOffset is the offset in NVR area. Offset 0 is NVR_APP_START_ADDRESS
- *        address ends with = (NVR_APP_END_ADDRESS - NVR_APP_START_ADDRESS).
- * @param bLength is the length of data to be read.
- * @param bRetBuffer pointer to return data.
- */
 void
 ZW_NVRGetAppValue(BYTE bOffset, BYTE bLength, BYTE *bRetBuffer)
 {

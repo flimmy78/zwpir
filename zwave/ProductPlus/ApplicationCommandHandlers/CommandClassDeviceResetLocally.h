@@ -11,23 +11,34 @@
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
 #include <ZW_typedefs.h>
-#include <ZW_sysdefs.h>
-#include <ZW_pindefs.h>
-#include <ZW_evaldefs.h>
-#include <ZW_classcmd.h>
+#include <CommandClass.h>
+
+/****************************************************************************/
+/*                       PUBLIC TYPES and DEFINITIONS                       */
+/****************************************************************************/
 
 /**
  * Returns the version of this CC.
  */
 #define CommandClassDeviceResetLocallyVersionGet() DEVICE_RESET_LOCALLY_VERSION
 
-/** 
- * @brief handleCommandClassDeviceResetLocally
- * Handler for Device Reset Locally CC
- * @param completedFunc Callback function pointer. Use the callback call to reset
- * the node. This function callback must be implemented!
+/**
+ * For backwards compatibility.
  */
-void 
-handleCommandClassDeviceResetLocally( VOID_CALLBACKFUNC(completedFunc)(BYTE));
+#define handleCommandClassDeviceResetLocally(a,b) CC_DeviceResetLocally_notification_tx(a,b)
+
+/****************************************************************************/
+/*                            PUBLIC FUNCTIONS                              */
+/****************************************************************************/
+
+/**
+ * Transmits a Device Reset Locally Notification.
+ * @param[in] pProfile Pointer to AGI profile.
+ * @param[in] pCallback Callback function pointer. Use the callback call to reset the node.
+ * This function callback MUST be implemented.
+ */
+void CC_DeviceResetLocally_notification_tx(
+  agi_profile_t * pProfile,
+  VOID_CALLBACKFUNC(pCallback)(transmission_result_t * pTransmissionResult));
 
 #endif

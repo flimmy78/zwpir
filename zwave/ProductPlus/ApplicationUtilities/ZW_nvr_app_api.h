@@ -1,19 +1,7 @@
 /**
- *
- * Copyright (c) 2001-2013
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- * @file ZW_nvr_app_api.h
- *
- * @brief API to NVR application area
- *
- * Author: Thomas Roll
- *
- * Last Changed By: $Author: tro $
- * Revision: $Revision: 0.00 $
- * Last Changed: $Date: 2013/09/16 15:49:32 $
- *
+ * @file
+ * API to NVR application area
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
  */
 
 #ifndef _ZW_nvr_app_api_H_
@@ -29,13 +17,13 @@
 /****************************************************************************/
 
 /**
- * Data structure for NVR application area. 
+ * Data structure for NVR application area.
  * Max size is (NVR_APP_END_ADDRESS - NVR_APP_START_ADDRESS)
  */
 typedef struct _NVR_APP_FLASH_STRUCT_
 {
   BYTE hwVersion; /* product hardware version*/
-  
+
 } NVR_APP_FLASH_STRUCT;
 
 /****************************************************************************/
@@ -48,9 +36,9 @@ typedef struct _NVR_APP_FLASH_STRUCT_
 /****************************************************************************/
 
 
-/** 
- * @brief ZW_NVRGetValue
- *    Get a value from the NVR flash page application area. There is no CRC 
+/**
+ * @brief ZW_NVRGetAppValue
+ *    Get a value from the NVR flash page application area. There is no CRC
  *    protection of NVR application area!
  *
  * @param bOffset is the offset in NVR area. Offset 0 is NVR_APP_START_ADDRESS

@@ -1,45 +1,7 @@
 /**
- *
- * Copyright (c) 2001-2014
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- * @file agi.h
- *
- * @brief AGI module. AGI module is interfacing association_plus module for reading 
- * association group node list. Current version do not support endpoints!
- * 
- * Example of using double pointer:
- * Current module use double pointer for delevering pointer to the modules data-area. 
- * Example calling GetNodeIdListFirst(...):
- *
- * CMD_CLASS_GRP cmdGrp;
- * NODE_LIST nList = NULL;
- * BYTE nodeListLen = 0;
- *
- *  AGI_NodeIdListInit(&nList);
- *
- *  // Seach through AGI table for AGI-profile ASSOCIATION_GROUP_INFO_REPORT_PROFILE_SENSOR and deliver 
- *  // node list for each group.
- *  while(TRUE == AGI_ResourceNodeIdListLookup( ASSOCIATION_GROUP_INFO_REPORT_PROFILE_SENSOR, 
- *                                 0, &cmdGrp, &pNodeList, &nodeListLen))
- *  {
- *    BYTE i = 0;
- *    // Now we have a pointer (pNodeList) to the node list and the length 
- *    // (nodeListLen)of the node list for  AGI profile ASSOCIATION_GROUP_INFO_REPORT_PROFILE_SENSOR
- *    for(i = 0; i < nodeListLen; i++)
- *    {
- *      // Print out the node list.
- *      ZW_DEBUG_SEND_NUM(pNodeList[i]);
- *    }
- *  }
- *
- * Author: Thomas Roll
- *
- * Last Changed By: $Author: tro $
- * Revision: $Revision: 0.00 $
- * Last Changed: $Date: 2014/05/28 11:02:25 $
- *
+ * @file
+ * Helper module for Command Class Association Group Information.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
  */
 
 #ifndef _AGI_H_
@@ -48,132 +10,129 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+
 #include <ZW_typedefs.h>
+#include <ZW_TransportEndpoint.h>
+#include <CommandClass.h>
+
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
 
+/**
+ * Enmum type NODE_LIST_STATUS is used for return status on API call AGI_NodeIdListGetNext.
+ * Enum types from NODE_LIST_STATUS_SUCCESS to NODE_LIST_STATUS_ERROR_LIST deliver status
+ * on the call and after NODE_LIST_STATUS_ERROR_LIST deliver an error identifiers pointing
+ * to a problem in application AGI/association configuarion.
+ */
+typedef enum
+{
+  NODE_LIST_STATUS_SUCCESS = 0,
+  NODE_LIST_STATUS_NO_MORE_NODES,
+  NODE_LIST_STATUS_ASSOCIATION_LIST_EMPTY,
+  NODE_LIST_STATUS_ERROR_LIST,              /**< enum values higher than this is error identifiers*/
+  NODE_LIST_STATUS_ERR_NO_TABLE_ENDPOINT,
+  NODE_LIST_STATUS_ERR_UNKNOWN_PROFILE,
+  NODE_LIST_STATUS_ERR_ENDPOINT_OUT_OF_RANGE,
+  NODE_LIST_STATUS_ERR_GROUP_NBR_NOT_LEGAL,
+  NODE_LIST_STATUS_ERR_LIFELINE_PROFILE_NOT_SUPPORTED,
+  NODE_LIST_STATUS_ERR_LIFELINE_SUPPORT_NOT_CC_BASIC,
+  NODE_LIST_STATUS_ERR_PROFILE_LIFELINE_ONLY_SUPPORT_IN_GRP_1,
+}
+NODE_LIST_STATUS;
 
 /**
- * Command class-group include on command class and one command. 
+ * NODE_LIST is used to control current AGI profile job.
  */
-typedef struct _CMD_CLASS_GRP_
-{
-  BYTE cmdClass; /**< Command class*/
-  BYTE cmd;      /**< Command*/
-} CMD_CLASS_GRP;
-
 typedef struct _NODE_LIST_
 {
-  BYTE* pNodeList; 
-  BYTE len;
-  BYTE* pCurrentNode; 
-  CMD_CLASS_GRP* pCurrentCmdGrp;
-} NODE_LIST;
+  uint8_t sourceEndpoint;       /**< Active endpoint handling AGI profile job */
+  MULTICHAN_NODE_ID* pNodeList; /**< pointer to the node list for AGI profile group */
+  uint8_t len;                     /**< Length of the node list */
+}
+NODE_LIST;
 
-
-typedef struct AGI_PROFILE
-{
-  BYTE profile_MS; /**< AGI profile of type: ASSOCIATION_GROUP_INFO_REPORT_PROFILE_...*/
-  BYTE profile_LS; /**< AGI profile of type: ASSOCIATION_GROUP_INFO_REPORT_PROFILE_...*/
-}  AGI_PROFILE;
-
+/**
+ * Structure for an AGI group including profile, one command class group and group name
+ */
 typedef struct _AGI_GROUP_
 {
-  BYTE profile_MS; /**< AGI profile of type: ASSOCIATION_GROUP_INFO_REPORT_PROFILE_...*/
-  BYTE profile_LS; /**< AGI profile of type: ASSOCIATION_GROUP_INFO_REPORT_PROFILE_...*/
+  AGI_PROFILE profile;
   CMD_CLASS_GRP cmdGrp; /**< AGI Profile cmd class group*/
-  BYTE groupName[42]; /**< AGI Profile group-name UTF-8 format*/
-} AGI_GROUP;
+  char groupName[42]; /**< AGI Profile group-name UTF-8 format*/
+}
+AGI_GROUP;
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
+
 /****************************************************************************/
 /*                           EXPORTED FUNCTIONS                             */
 /****************************************************************************/
 
-
- /** 
- * @brief AGI_LifeLineGroupSetup
- * Setup AGI Lifeline command classes and commands. Create a CMD_CLASS_GRP 
- * array.
- * @param pCmdGrpList is list of lifeline command groups (cmd classes and commands).
- * @param listSize is number of command groups in lifeline list (array size).
+/**
+ * Initializes all AGI parameters. This MUST be called before calling other AGI functions.
  */
-void AGI_LifeLineGroupSetup( CMD_CLASS_GRP* pCmdGrpList, BYTE listSize);
+//@ [AGI_Init]
+void AGI_Init(void);
+//@ [AGI_Init]
 
- /** 
- * @brief AGI_ResourceGroupSetup
- * Setup AGI list of tables for one endpoint. 
- * @param pTable is AGI table for one endpoint.
- * @param tableSize is number of groups in table.
- * @param endpoint device endpoint number for the AGI table. Enpoint 0 and 1 will be 
+/**
+ * Setup AGI Lifeline command classes and commands for each endpoint.
+ * Create a CMD_CLASS_GRP array.
+ * @param endpoint device endpoint number for the lifeline AGI table. Endpoint 0 and 1 will be
+ * handle as the same number!
+ * @param[in] pCmdGrpList is list of lifeline command groups (cmd classes and commands).
+ * @param[in] listSize is number of command groups in lifeline list (array size).
+ * @param[in] pGrpName pointer to endpoint string name.
+ */
+//@ [AGI_LifeLineGroupSetup]
+void AGI_LifeLineGroupSetup(
+    CMD_CLASS_GRP* pCmdGrpList,
+    uint8_t listSize,
+    const char * pGrpName,
+    uint8_t endpoint);
+//@ [AGI_LifeLineGroupSetup]
+
+ /**
+ * Sets up the AGI table of groups for a given endpoint (or root device).
+ * @param[in] pTable[] is AGI table for one endpoint.
+ * @param[in] tableSize is number of groups in table.
+ * @param[in] endpoint device endpoint number for the AGI table. Endpoint 0 and 1 will be
  * handle as the same number!
  */
-void AGI_ResourceGroupSetup(AGI_GROUP* pTable, BYTE tableSize, BYTE endpoint);
+//@ [AGI_ResourceGroupSetup]
+void AGI_ResourceGroupSetup(
+    AGI_GROUP pTable[],
+    uint8_t tableSize,
+    uint8_t endpoint);
+//@ [AGI_ResourceGroupSetup]
 
-
-
-/** 
- * @brief SetSpecificGroupId
- * Function description
- * Set specific group Id. THis function is intended to assist the association 
- * of multi-button wall controller devices so that individual buttons can be 
- * mapped to different target devices. Please read "Z-Wave command Class 
- * specification" chapter "Association Specific Group Get Command".
- *
- * @param profile is AGI-profile.
- * @param endpoint is source node endpoint.
- * @return TRUE if it found the profile else FALSE.
+/**
+ * Request node list is used by Command classes modules to extract the association nodelist for a
+ * request call.
+ * @param[in] pProfile is a pointer to AGI profile.
+ * @param[in] pCurrentCmdGrp is a pointer to command class group
+ * @param[in] sourceEndpoint device source endpoint
+ * @return transmit option pointer of type TRANSMIT_OPTIONS_TYPE_EX. Return NULL if something vent
+ * wrong.
  */
-BOOL AGI_SpecificGroupIdSet( AGI_PROFILE profile, BYTE endpoint);
+TRANSMIT_OPTIONS_TYPE_EX * ReqNodeList(
+    AGI_PROFILE * pProfile,
+    CMD_CLASS_GRP * pCurrentCmdGrp,
+    uint8_t sourceEndpoint);
 
-
-/** 
- * @brief AGI_LifeLineNodeIdListLookup
- * Get Lifeline node list. 
- * @param ppCmdGrp is a double-pointer to association command class groups.
- * @param pListSize is a pointer deliver number of command class groups.
- * @param ppNodeList is a double pointer to the association module nodelist. 
- * @param pNodeListLen is poiner to length of the nodelist (number of nodes in the list).
- * @return status TRUE if the profile was found else FALSE.
+#ifdef NOT_USED
+/**
+ * @brief Returns the number of association groups for a given endpoint.
+ * @param[in] A given endpoint where 0 is the root device.
+ * @return Number of association groups.
  */
-BOOL AGI_LifeLineNodeIdListLookup( CMD_CLASS_GRP** ppCmdGrp,BYTE* pListSize, BYTE** ppNodeList, BYTE* pNodeListLen);
-
-
-/** 
- * @brief AGI_NodeIdListInit
- * Reset the node list search. Most be called before starting AGI_ResourceNodeIdListLookup(..)
- */
-void AGI_NodeIdListInit(NODE_LIST* pNextNode, AGI_PROFILE* pInAgiProfile);
-
-
-/** 
- * @brief AGI_ResourceNodeIdListLookup
- * Get next node list out from AGI profile. Application should call AGI_ResourceNodeIdListLookup()
- * until it return FALSE. This function do not support lifeline.
- * @param profile is AGI profile
- * @param endpoint is source endpoint.
- * @param ppNodeList is a double pointer to the association module nodelist.
- * @param pNodeListLen is poiner to length of the nodelist (number of nodes in the list).
- * @return status TRUE if the profile was found else FALSE.
- */
-BOOL AGI_ResourceNodeIdListLookup( AGI_PROFILE profile,  BYTE endpoint, CMD_CLASS_GRP** ppCmdGrp,  BYTE** ppNodeList, BYTE* pNodeListLen);
-
-
-/** 
- * @brief AGI_NodeIdListGetNext
- * Return destination nodes dependent of AGI profile. Only one destiantion node is returned per call. 
- * User should call the function until AGI_NodeIdListGetNext return FALSE. AGI_NodeIdListGetNext
- * seach first through AGI lifeline group and the rest.
- * @param pNextNode is destination node of type NODE_LIST.
- * @param pInAgiProfile is a pointer to AGI profile
- * @return boolean, TRUE if not finish else FALSE.
- */
-BOOL AGI_NodeIdListGetNext( NODE_LIST* pNextNode);
+uint8_t
+GetApplAssoGroupsSize(uint8_t endpoint);
+#endif
 
 #endif /* _AGI_H_ */
-
-

@@ -59,81 +59,81 @@
 ** Side effects: none
 **
 **-------------------------------------------------------------------------*/
-void
+received_frame_status_t
 handleCommandClassDoorLock(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt, /* IN receive options of type RECEIVE_OPTIONS_TYPE_EX  */
+  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN  Payload from the received frame */
+  BYTE cmdLength)               /* IN Number of command bytes including the command */
 {
-
+  UNUSED(cmdLength);
   switch (pCmd->ZW_Common.cmd)
   {
 
     case DOOR_LOCK_OPERATION_SET_V2:
       handleCommandClassDoorLockOperationSet(pCmd->ZW_DoorLockOperationSetV2Frame.doorLockMode);
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
 
     case DOOR_LOCK_OPERATION_GET_V2:
+      if(FALSE == Check_not_legal_response_job(rxOpt))
       {
         ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
           pTxBuf->ZW_DoorLockOperationReportV2Frame.cmdClass = COMMAND_CLASS_DOOR_LOCK_V2;
           pTxBuf->ZW_DoorLockOperationReportV2Frame.cmd = DOOR_LOCK_OPERATION_REPORT_V2;
-          handleCommandClassDoorLockOperationReport( &(pTxBuf->ZW_DoorLockOperationReportV2Frame.doorLockMode));
-          if(FALSE == Transport_SendResponse(
-              sourceNode,
+          handleCommandClassDoorLockOperationReport((CMD_CLASS_DOOR_LOCK_OPERATION_REPORT *)&(pTxBuf->ZW_DoorLockOperationReportV2Frame.doorLockMode));
+          if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
               (BYTE *)pTxBuf,
               sizeof(ZW_DOOR_LOCK_OPERATION_REPORT_V2_FRAME),
-              option,
+              pTxOptionsEx,
               ZCB_ResponseJobStatus))
           {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
             FreeResponseBuffer();
           }
-        }
-        else
-        {
-          /*pTxBuf is occupied.. do nothing*/
+          return RECEIVED_FRAME_STATUS_SUCCESS;
         }
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
 
     case DOOR_LOCK_CONFIGURATION_SET_V2:
-      handleCommandClassDoorLockConfigurationSet( &(pCmd->ZW_DoorLockConfigurationSetV2Frame.operationType));
+      handleCommandClassDoorLockConfigurationSet((CMD_CLASS_DOOR_LOCK_CONFIGURATION *)&(pCmd->ZW_DoorLockConfigurationSetV2Frame.operationType));
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
 
     case DOOR_LOCK_CONFIGURATION_GET_V2:
+      if(FALSE == Check_not_legal_response_job(rxOpt))
       {
         ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
           pTxBuf->ZW_DoorLockConfigurationReportV2Frame.cmdClass = COMMAND_CLASS_DOOR_LOCK_V2;
           pTxBuf->ZW_DoorLockConfigurationReportV2Frame.cmd = DOOR_LOCK_CONFIGURATION_REPORT_V2;
-          handleCommandClassDoorLockConfigurationReport(&(pTxBuf->ZW_DoorLockConfigurationReportV2Frame.operationType));
-          if(FALSE == Transport_SendResponse(
-              sourceNode,
+          handleCommandClassDoorLockConfigurationReport((CMD_CLASS_DOOR_LOCK_CONFIGURATION *)&(pTxBuf->ZW_DoorLockConfigurationReportV2Frame.operationType));
+          if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
               (BYTE *)pTxBuf,
               sizeof(ZW_DOOR_LOCK_CONFIGURATION_REPORT_V2_FRAME),
-              option,
+              pTxOptionsEx,
               ZCB_ResponseJobStatus))
           {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
             FreeResponseBuffer();
           }
-        }
-        else
-        {
-          /*pTxBuf is occupied.. do nothing*/
+          return RECEIVED_FRAME_STATUS_SUCCESS;
         }
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
 
@@ -147,36 +147,19 @@ handleCommandClassDoorLock(
 **-------------------------------------------------------------------------*/
 JOB_STATUS
 CmdClassDoorLockOperationSupportReport(
-  BYTE destNode,
-  CMD_CLASS_DOOR_LOCK_OPERATION_REPORT* pData ,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
+  CMD_CLASS_DOOR_LOCK_OPERATION_REPORT* pData,
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult))
 {
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
+  CMD_CLASS_GRP cmdGrp = {COMMAND_CLASS_DOOR_LOCK_V2, DOOR_LOCK_OPERATION_REPORT_V2};
 
-  if(NULL == pTxBuf)
-  {
-    /*Ongoing job is active.. just stop current job*/
-    return JOB_STATUS_BUSY;
-  }
-
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.cmdClass      = COMMAND_CLASS_DOOR_LOCK_V2;
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.cmd           = DOOR_LOCK_OPERATION_REPORT_V2;
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.doorLockMode  = pData->mode;
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.properties1   = (pData->insideDoorHandleMode & 0xf) |
-    (pData->outsideDoorHandleMode << 4);
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.doorCondition = pData->condition;
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.lockTimeoutMinutes  = pData->lockTimeoutMin;
-  pTxBuf->ZW_DoorLockOperationReportV2Frame.lockTimeoutSeconds  = pData->lockTimeoutSec;
-  if(! Transport_SendRequest(
-        destNode,
-        (BYTE*)pTxBuf,
-        sizeof(ZW_DOOR_LOCK_OPERATION_REPORT_V2_FRAME),
-        ZWAVE_PLUS_TX_OPTIONS,
-        ZCB_RequestJobStatus, FALSE))
-  {
-    FreeRequestBuffer();
-    return JOB_STATUS_BUSY;
-  }
-
-  return JOB_STATUS_SUCCESS;
+  return cc_engine_multicast_request(
+      pProfile,
+      sourceEndpoint,
+      &cmdGrp,
+      (uint8_t*)pData,
+      sizeof(CMD_CLASS_DOOR_LOCK_OPERATION_REPORT),
+      TRUE,
+      pCallback);
 }

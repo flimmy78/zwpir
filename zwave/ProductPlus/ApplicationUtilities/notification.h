@@ -1,15 +1,11 @@
 /**
- *
- * Copyright (c) 2001-2014
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- * @file notification.h
- *
- * @brief Notification V4 module. Current version cannot queue up more events, but
- * it is possible to implement a queue in current design.
+ * @file
+ * Command Class Notification helper module.
  *
  * How to use Notification module:
+ *
+ * Current version cannot queue up more events, but it is possible to implement a queue in current
+ * design.
  *
  * Initialization:
  * 1. Call constructor InitNotification()
@@ -19,20 +15,13 @@
  * Trigger event:
  * 1.  First trigger an event on Communication Module by calling
  *     NotificationEventTrigger (..) and then call AGI_NodeIdListInit (..) to
- *     trig profile-event at AGI. 
+ *     trig profile-event at AGI.
  * 2. AGI now sends an unsolicited events to all nodes. It has the knowledge Command class and
- *    and command (NextUnsolicitedEvent), but need data and get it by calling
- *    ReadLastNotificationAction(..).
+ *    and command (NextUnsolicitedEvent).
  * 3. Finally notification-type/event must to be cleared from the queue. This
  *    done by calling ClearLastNotificationAction(). ClearLastNotificationAction ()
  *    is called when it's done with the unsolicited event jobs.
- *
- * Author: Thomas Roll
- *
- * Last Changed By: $Author: tro $
- * Revision: $Revision: 0.00 $
- * Last Changed: $Date: 2014/08/07 10:27:00 $
- *
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
  */
 
 #ifndef _NOTIFICATION_H_
@@ -43,9 +32,11 @@
 /****************************************************************************/
 #include <ZW_typedefs.h>
 #include <CommandClassNotification.h>
+#include <agi.h>
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
+
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
@@ -59,49 +50,74 @@
 
 
 /**
- * @brief InitNotification
- * Init notification module
+ * @brief Init notification module
  */
 void InitNotification(void);
 
 
 /**
- * @brief AddNotification
- * Comment function...
- * @param type is notification type.
- * @param event is notification event dependent og the notification type.
- * @param pEvPar pointer to event parameter list.
- * @param evParLen length of list.
+ * @brief Set default notification status if it is active or deactive.
+ * @param status of type NOTIFICATION_STATUS
+ */
+void DefaultNotifactionStatus(NOTIFICATION_STATUS status);
+
+
+/**
+ * @brief Configure notification event linked to a specific AGI profile. Notification module can
+ * handle notification event as a state. Example setting up notification = Power management
+ * (0x08), event = Over-load detected (0x08) and stateless = FALSE. If the event is triggered
+ * Notification module remeber the state that over-load is active until application trigger event
+ * notification = 0x08, event = 0x00, eventPar = Over-load detected (0x08) that clear the state.
+ * @param pAgiProfile of type AGI_PROFILE is used to link notification to AGI event.
+ * @param type of type NOTIFICATION_TYPE
+ * @param pSuppportedEvents is notification event list for the specific notification type.
+ * @param suppportedEventsLen is length of the list
+ * @param stateless define current notification has a state or is stateless.
+ * If stateless is FALSE do Notification-module remember last event until it is disabled.
+ * @param endpoint setting up the notification for a specific endpoint.
  * @return TRUE if success else FALSE.
  */
-BOOL AddNotification(NOTIFICATION_TYPE type, BYTE event, BYTE* pEvPar, BYTE evParLen);
+BOOL AddNotification( AGI_PROFILE* pAgiProfile,
+  NOTIFICATION_TYPE type,
+  BYTE* pSuppportedEvents,
+  BYTE suppportedEventsLen,
+  BOOL stateless,
+  BYTE endpoint );
 
 /**
- * @brief NotificationEventTrigger
- * Add event on queue (queue size 1)
- * @param notificationType is notification type
- * @param notificationEvent notification event
+ * @brief Add event on queue (queue size 1)
+ * @param[in] pAgiProfile of type AGI_PROFILE is used to link notification to AGI event.
+ * @param[in] notificationEvent notification event
+ * @param[in] pEvPar point to event parameters.
+ * @param[in] evParLen length of event parameters.
+ * @param[in] sourceEndpoint source endpoint
  */
-void NotificationEventTrigger(BYTE notificationType,BYTE notificationEvent);
+void NotificationEventTrigger(
+    AGI_PROFILE * pAgiProfile,
+    uint8_t notificationEvent,
+    uint8_t * pEvPar,
+    uint8_t evParLen,
+    uint8_t sourceEndpoint);
+
+/**
+ * @brief Send unsolicited notification event to node in pnList.
+ * @param[in] pProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
+ * @param[out] pCallback callback function returning state on job
+ * @return JOB_STATUS
+ */
+JOB_STATUS UnsolicitedNotificationAction(
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult));
 
 
 /**
- * @brief ReadLastNotificationAction
- * Read last event on queue
- * @param pNotificationType pointer to notification type.
- * @param pNotificationEvent pointer to notification event.
- * @param pEvPar pointer to event parameter list.
- * @param evParLen length of list.
- * @return TRUE if event on queue else FALSE.
+ * @brief Clear event on queue
+ * @param[in] pAgiProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
  */
-BOOL ReadLastNotificationAction(NOTIFICATION_TYPE* pType, BYTE* pEvent);
-
-
-/**
- * @brief ClearLastNotificationAction
- * Clear event on queue
- */
-void ClearLastNotificationAction(void);
+void ClearLastNotificationAction(AGI_PROFILE* pAgiProfile, BYTE sourceEndpoint);
 
 
 #endif /* _NOTIFICATION_H_ */

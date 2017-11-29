@@ -1,19 +1,7 @@
 /**
- *
- * Copyright (c) 2001-2014
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- * @file ZW_string.h
- *
- * @brief string utils.
- *
- * Author: Thomas Roll
- *
- * Last Changed By: $Author: tro $
- * Revision: $Revision: 0.00 $
- * Last Changed: $Date: 2014/06/02 10:32:49 $
- *
+ * @file
+ * String utilities.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
  */
 
 #ifndef _ZW_STRING_H_
@@ -39,15 +27,12 @@
 /****************************************************************************/
 
 /** 
- * @brief ZW_strlen
- * ZW_strlen computes the length of the string str up to but not including the 
+ * @brief ZW_strlen computes the length of a given string up to but not including the
  * terminating null character.
- * @param str This is the string whose length is to be found.
- * @return the length of string.
+ * @param str Pointer to a string.
+ * @return The length of the given string.
  */
-BYTE ZW_strlen(BYTE* str);
-
+BYTE
+ZW_strlen(BYTE* str);
 
 #endif /* _ZW_STRING_H_ */
-
-

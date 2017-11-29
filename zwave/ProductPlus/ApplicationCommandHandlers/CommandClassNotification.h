@@ -11,16 +11,14 @@
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
 #include <ZW_typedefs.h>
-#include <ZW_sysdefs.h>
-#include <ZW_pindefs.h>
-#include <ZW_evaldefs.h>
 #include <ZW_classcmd.h>
-#include <ZW_tx_mutex.h>
+#include <CommandClass.h>
+#include <agi.h>
 
 /**
  * Returns the version of this CC.
  */
-#define CommandClassNotificationVersionGet() NOTIFICATION_VERSION_V4
+#define CommandClassNotificationVersionGet() 8
 
 /**
  * Notification type (8 bit).
@@ -30,16 +28,16 @@ typedef enum
   NOTIFICATION_TYPE_NONE,
   NOTIFICATION_TYPE_SMOKE_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_SMOKE_ALARM),
   NOTIFICATION_TYPE_CO_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_CO_ALARM),
-  NOTIFICATION_TYPE_CO2_ALARM = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_CO2_ALARM),
-  NOTIFICATION_TYPE_HEAT_ALARM = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_HEAT_ALARM),
-  NOTIFICATION_TYPE_WATER_ALARM = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_WATER_ALARM),
-  NOTIFICATION_TYPE_AcCESS_CONTROL = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_ACCESS_CONTROL),
+  NOTIFICATION_TYPE_CO2_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_CO2_ALARM),
+  NOTIFICATION_TYPE_HEAT_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_HEAT_ALARM),
+  NOTIFICATION_TYPE_WATER_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_WATER_ALARM),
+  NOTIFICATION_TYPE_AcCESS_CONTROL = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_ACCESS_CONTROL),
   NOTIFICATION_TYPE_HOME_SECURITY = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_HOME_SECURITY),
-  NOTIFICATION_TYPE_POWER_MANAGEMENT = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_POWER_MANAGEMENT),
-  NOTIFICATION_TYPE_SYSTEM = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_SYSTEM),
-  NOTIFICATION_TYPE_EMERGENCY_ALARM = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_EMERGENCY_ALARM),
-  NOTIFICATION_TYPE_CLOCK = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_CLOCK),
-  NOTIFICATION_TYPE_MULTIDEVICE = (0XFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_MULTIDEVICE)
+  NOTIFICATION_TYPE_POWER_MANAGEMENT = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_POWER_MANAGEMENT),
+  NOTIFICATION_TYPE_SYSTEM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_SYSTEM),
+  NOTIFICATION_TYPE_EMERGENCY_ALARM = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_EMERGENCY_ALARM),
+  NOTIFICATION_TYPE_CLOCK = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_CLOCK),
+  NOTIFICATION_TYPE_MULTIDEVICE = (0xFF & ICON_TYPE_SPECIFIC_SENSOR_NOTIFICATION_MULTIDEVICE)
 } NOTIFICATION_TYPE;
 
 
@@ -135,6 +133,10 @@ typedef enum
   NOTIFICATION_STATUS_SET_UNSOLICIT_ACTIVED = 0xFF
 } NOTIFICATION_STATUS_SET;
 
+
+/**
+ * Notification status Get
+ */
 typedef enum
 {
   NOTIFICATION_STATUS_UNSOLICIT_DEACTIVATED = 0x00,
@@ -142,19 +144,16 @@ typedef enum
   NOTIFICATION_STATUS_UNSOLICIT_ACTIVED = 0xFF
 } NOTIFICATION_STATUS;
 
-
-
 /**
- * @brief handleAppNotificationSet
- * Application specific Notification Set cmd handler
- * @param par description..
- * @return description..
+ * @brief Application specific Notification Set cmd handler.
+ * @param[in] notificationType notification type
+ * @param[in] notificationStatus notification status of type NOTIFICATION_STATUS_SET
+ * @param[in] endpoint is the destination endpoint
  */
-extern void
-handleAppNotificationSet(
-  NOTIFICATION_TYPE notificationType,
-  NOTIFICATION_STATUS_SET notificationStatus);
-
+extern void handleAppNotificationSet(
+    NOTIFICATION_TYPE notificationType,
+    NOTIFICATION_STATUS_SET notificationStatus,
+    uint8_t endpoint);
 
 /**
  * @brief CmdClassNotificationGetNotification
@@ -165,11 +164,12 @@ handleAppNotificationSet(
  *  0x00                | Unsolicited notification is deactivated. The group mapped to Notification Command Class in Association Command Class is not configured with any node IDs.
  *  0xFF                | Unsolicited notification is activated or a pending notification is present.
  * @param notificationType 8 bit type. If 0xFF, return first detected Notification on supported list.
+ * @param[in] endpoint is the destination endpoint
  * @return 8 bit notification status.
  */
-extern NOTIFICATION_STATUS
-CmdClassNotificationGetNotificationStatus(BYTE notificationType);
-
+extern NOTIFICATION_STATUS CmdClassNotificationGetNotificationStatus(
+    uint8_t notificationType,
+    uint8_t endpoint);
 
 /**
  * @brief CmdClassNotificationGetNotificationEvent
@@ -178,36 +178,40 @@ CmdClassNotificationGetNotificationStatus(BYTE notificationType);
  * If the “Event Parameters Length” field is not equal to ‘0’, these field(s)
  * contains the encapsulated information available to the “Notification Type”
  * and “Event”.
- * @param pNotificationType pointer to 8 bit type. If 0xFF, return first detected Notification on supported list.
- * @param pNotificationEvent pointer to 8 bit event.
- * @param pEventPar pointer to Event Parameter 1 … Event Parameter N .
- * @param pEvNbrs pointer to number of parameters N.
+ * @param[out] pNotificationType pointer to 8 bit type. If 0xFF, return first
+ *             detected Notification on supported list.
+ * @param[out] pNotificationEvent pointer to 8 bit event.
+ * @param[out] pEventPar pointer to Event Parameter 1 … Event Parameter N .
+ * @param[out] pEvNbrs pointer to number of parameters N.
+ * @param[in] endpoint is the destination endpoint
  * @return if event is legal.
  */
-extern BOOL
-CmdClassNotificationGetNotificationEvent(BYTE* pNotificationType,
-                                        BYTE* pNotificationEvent,
-                                        BYTE* pEventPar,
-                                        BYTE* pEvNbrs);
+extern BOOL CmdClassNotificationGetNotificationEvent(
+    uint8_t * pNotificationType,
+    uint8_t * pNotificationEvent,
+    uint8_t * pEventPar,
+    uint8_t * pEvNbrs,
+    uint8_t endpoint);
 
 
 /**
  * @brief CmdClassNotificationGetType
  * User application function. See SDS11060.doc table "4.73.3.1	Table of defined
  * Notification Types & Events".
+ * @param[in] endpoint is the destination endpoint
  * @return 8 bit type.
  */
-extern BYTE
-CmdClassNotificationGetType(void);
+extern uint8_t CmdClassNotificationGetType(uint8_t endpoint);
+
 
 /**
  * @brief CmdClassNotificationGetEvent
  * User application function. See SDS11060.doc table "4.73.3.1	Table of defined
  * Notification Types & Events".
+ * @param[in] endpoint is the destination endpoint
  * @return 8 bit event.
  */
-extern BYTE
-CmdClassNotificationGetEvent(void);
+extern uint8_t CmdClassNotificationGetEvent(uint8_t endpoint);
 
 
 /**
@@ -215,92 +219,85 @@ CmdClassNotificationGetEvent(void);
  * The Notification Supported Report Command is used to report the supported
  * Notification Types in the application. The Notification Supported Report Command
  * is transmitted as a result of a received Notification Supported Get Command and
- *  MUST not be sent unsolicited.
- * @param pNbrBitMask Indicates the Number of Bit Masks fields (1-31) used
- * in bytes
- * @param pBitMaskArray The Bit Mask fields describe the supported Notification
- * Type(s) by the device
+ * MUST not be sent unsolicited.
+ * @param[out] pNbrBitMask Indicates the Number of Bit Masks fields (1-31) used
+ *             in bytes.
+ * @param[out] pBitMaskArray The Bit Mask fields describe the supported Notification
+ *             Type(s) by the device
+ * @param[in] endpoint is the destination endpoint
  */
-extern void
-handleCmdClassNotificationSupportedReport( BYTE* pNbrBitMask, BYTE* pBitMaskArray);
+extern void handleCmdClassNotificationSupportedReport(
+  uint8_t * pNbrBitMask,
+  uint8_t * pBitMaskArray,
+  uint8_t endpoint);
 
 
 /**
  * @brief handleAppNotificationEventSupportedReport
- *  The Event Supported Report Command is transmitted as a result of a received
- *  Event Supported Get Command and MUST not be sent unsolicited.  If an Event
- *  Supported Get is received with a not supported Notification Type or Notification
- *  @param notificationType notification Type.
- *  @param pNbrBitMask Indicates the Number of Bit Masks fields (1-31) used in bytes.
- *  @param pBitMaskArray The Bit Mask fields describe the supported Events within the requested Notification Type.
-Example if Notification Type = Heat Alarm (0x04):
-
- *  Side effects: none
- * @return description..
+ * The Event Supported Report Command is transmitted as a result of a received
+ * Event Supported Get Command and MUST not be sent unsolicited.  If an Event
+ * Supported Get is received with a not supported Notification Type or Notification
+ * @param[in] notificationType notification Type.
+ * @param[out] pNbrBitMask Indicates the Number of Bit Masks fields (1-31) used in bytes.
+ * @param[out] pBitMaskArray The Bit Mask fields describe the supported Events within the requested Notification Type.
+ *             Example if Notification Type = Heat Alarm (0x04):
+ * @param[in] endpoint is the destination endpoint
  */
-extern void
-handleCmdClassNotificationEventSupportedReport(BYTE notificationType, BYTE* pNbrBitMask, BYTE* pBitMaskArray);
-
-/*==============================   handleCommandClassNotification  ============
-**
-**  Function:  handler for Notification CC
-**
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-extern void
-handleCommandClassNotification(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-);
-
-/*===============================  NotificationSendStatus  ==============================
-**
-**
-**
-**-------------------------------------------------------------------------------------------*/
-void NotificationSendStatus (BYTE bStatus, /*IN Status of the notification frame send process*/
-                             BYTE bGroupID, /*IN the group ID of the node the notification frame is send to it*/
-                             BYTE bNodeID   /*IN the node ID that the notification frame is sendt to it*/
-                            );
-
-/*========================   startSendNoficationToAssociationGroup  ==========
-**   checks condition for Sending Nofication Unsolicited Frame
-**   return boolean
-**
-**   Side effects: none
-**--------------------------------------------------------------------------*/
-extern BOOL
-startSendNoficationToAssociationGroup(void);
-
+extern void handleCmdClassNotificationEventSupportedReport(
+    uint8_t notificationType,
+    uint8_t * pNbrBitMask,
+    uint8_t * pBitMaskArray,
+    uint8_t endpoint);
 
 
 /**
- * @brief CmdClassNotificationReport
- * Send notification report. See SDS11060.doc “Table of defined Notification
- * Types & Events”.
- * @param nodeId destination node.
- * @param notificationType Notification Type (8 bit)
- * @param notificationEvent Event (8 bit)
- * @param completedFunc callback function returning state on job
- * @return description..
+ * @brief handleCommandClassNotification
+ * Handler for command class Notification
+ * @param[in] rxOpt IN receive options of type RECEIVE_OPTIONS_TYPE_EX
+ * @param[in] pCmd IN  Payload from the received frame
+ * @param[in] cmdLength IN Number of command bytes including the command
+ * @return receive frame status.
  */
-JOB_STATUS
-CmdClassNotificationReport(BYTE nodeId,
-                           BYTE notificationType,
-                           BYTE notificationEvent,
-                           VOID_CALLBACKFUNC(completedFunc)(BYTE));
+received_frame_status_t handleCommandClassNotification(
+  RECEIVE_OPTIONS_TYPE_EX * rxOpt,
+  ZW_APPLICATION_TX_BUFFER * pCmd,
+  uint8_t cmdLength);
+
+
+/**
+ * @brief Sends notification report. See SDS11060.doc “Table of defined Notification Types &
+ * Events”.
+ * @param[in] pProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
+ * @param[in] notificationType Notification Type (8 bit)
+ * @param[in] notificationEvent Event (8 bit)
+ * @param[in] pCallback callback function returning state on job
+ * @return JOB_STATUS
+ */
+JOB_STATUS CmdClassNotificationReport(
+  AGI_PROFILE * pProfile,
+  uint8_t sourceEndpoint,
+  uint8_t notificationType,
+  uint8_t notificationEvent,
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult));
 
 /**
  * @brief GetGroupNotificationType
- * Comment function...
- * @param par description..
- * @return description..
+ * Read last active notification type
+ * @param[in,out] pNotificationType
+ * @param[in] endpoint is the destination endpoint
+ * @return Success: group number, else: 0xFF
  */
-extern BYTE GetGroupNotificationType(NOTIFICATION_TYPE* pNotificationType);
+extern uint8_t GetGroupNotificationType(uint8_t * pNotificationType, uint8_t endpoint);
 
+/**
+ * @brief Find a endpoint that use a specific notificationType
+ * @param[in] notificationType
+ * @param[in,out] pEndpoint is the destination endpoint
+ * @return boolean
+ */
+extern BOOL FindNotificationEndpoint(
+    NOTIFICATION_TYPE notificationType,
+    uint8_t * pEndpoint);
 
 #endif /*_COMMAND_CLASS_NOTIFICATION_H_*/

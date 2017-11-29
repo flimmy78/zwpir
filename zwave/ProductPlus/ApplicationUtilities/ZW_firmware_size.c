@@ -30,5 +30,8 @@
 
 /* Size field of firmware descriptor for OTA firmware update.                 */
 /* This size field must be, and will be, located just after the reset vector. */
+#ifdef __C51__
 code WORD firmwareSize = (WORD)&firmwareDescriptor + sizeof(t_firmwareDescriptor);
-
+#else
+code WORD firmwareSize = 0;
+#endif

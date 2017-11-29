@@ -6,7 +6,7 @@
 #include <ZW_slave_32_api.h>
 #else
 #include <ZW_slave_routing_api.h>
-#endif 
+#endif  /* ZW_SLAVE_32 */
 
 #include <ZW_classcmd.h>
 #include <ZW_mem_api.h>
@@ -20,10 +20,14 @@
 #include <ota_util.h>
 #include <CommandClassFirmwareUpdate.h>
 #endif
+#include <nvm_util.h>
 
-#include <ZW_pindefs.h>
-#include <ZW_evaldefs.h>
-#include <keyman.h>
+/*IO control*/
+#include <io_zdp03a.h>
+
+#include <ZW_task.h>
+#include <ev_man.h>
+#include <ZW_timer_api.h>
 
 #ifdef ZW_ISD51_DEBUG
 #include "ISD51.h"
@@ -37,15 +41,15 @@
 #include <CommandClassZWavePlusInfo.h>
 #include <CommandClassPowerLevel.h>
 #include <CommandClassDeviceResetLocally.h>
-#include <manufacturer_specific_device_id.h>
 #include <CommandClassBasic.h>
 
 #include <CommandClassBattery.h>
 #include <CommandClassNotification.h>
-#include <notification.h>
-#include <ZW_adcdriv_api.h>
 
-#include <ZW_power_api.h>
+#include <CommandClassMultiChan.h>
+#include <CommandClassMultiChanAssociation.h>
+#include <CommandClassSupervision.h>
+#include <notification.h>
 
 #include <battery_plus.h>
 #include <battery_monitor.h>
@@ -54,69 +58,72 @@
 #include <ZW_power_api.h>
 #include <ZW_nvr_api.h>
 #include <appl_timer_api.h>
+#include <ZW_conbufio.h>
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Debug Macro
 //,ZW_DEBUG_SENSORPIR,ZW_DEBUG,ZM5202,ZW_DEBUG_BATT
-
+//, ZM5202,ZW_DEBUG
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Class Command
 static code BYTE cmdClassListNonSecureNotIncluded[] = {
-  COMMAND_CLASS_ZWAVEPLUS_INFO,
-  COMMAND_CLASS_ASSOCIATION,
-  COMMAND_CLASS_ASSOCIATION_GRP_INFO,
-  COMMAND_CLASS_VERSION,
-  COMMAND_CLASS_MANUFACTURER_SPECIFIC,
-  COMMAND_CLASS_DEVICE_RESET_LOCALLY,
-  COMMAND_CLASS_POWERLEVEL,
-  COMMAND_CLASS_BATTERY,
-#ifdef SECURITY
-  COMMAND_CLASS_SECURITY,
-#endif
-  COMMAND_CLASS_NOTIFICATION_V3,
-  COMMAND_CLASS_WAKE_UP
+	COMMAND_CLASS_ZWAVEPLUS_INFO,
+	COMMAND_CLASS_ASSOCIATION,
+	COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION_V2,
+	COMMAND_CLASS_ASSOCIATION_GRP_INFO,
+	COMMAND_CLASS_TRANSPORT_SERVICE_V2,
+	COMMAND_CLASS_VERSION,
+	COMMAND_CLASS_MANUFACTURER_SPECIFIC,
+	COMMAND_CLASS_DEVICE_RESET_LOCALLY,
+	COMMAND_CLASS_POWERLEVEL,
+	COMMAND_CLASS_BATTERY,
+	COMMAND_CLASS_SECURITY_2,
+	COMMAND_CLASS_NOTIFICATION_V3,
+	COMMAND_CLASS_WAKE_UP,
+	COMMAND_CLASS_SUPERVISION
 #ifdef BOOTLOADER_ENABLED
-  ,COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2
+		,COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2
 #endif
 };
 static code BYTE cmdClassListNonSecureIncludedSecure[] = {
-#ifdef SECURITY
-  COMMAND_CLASS_ZWAVEPLUS_INFO,
-  COMMAND_CLASS_SECURITY
-#else
-  NULL
-#endif
+	COMMAND_CLASS_ZWAVEPLUS_INFO,
+	COMMAND_CLASS_TRANSPORT_SERVICE_V2,
+	COMMAND_CLASS_SECURITY_2
 };
 static code BYTE cmdClassListSecure[] = {
-#ifdef SECURITY
-  COMMAND_CLASS_ASSOCIATION,
-  COMMAND_CLASS_ASSOCIATION_GRP_INFO,
-  COMMAND_CLASS_VERSION,
-  COMMAND_CLASS_MANUFACTURER_SPECIFIC,
-  COMMAND_CLASS_DEVICE_RESET_LOCALLY,
-  COMMAND_CLASS_POWERLEVEL,
-  COMMAND_CLASS_BATTERY,
-  COMMAND_CLASS_NOTIFICATION_V3,
-  COMMAND_CLASS_WAKE_UP
+	COMMAND_CLASS_VERSION,
+	COMMAND_CLASS_ASSOCIATION,
+	COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION_V2,
+	COMMAND_CLASS_ASSOCIATION_GRP_INFO,
+	COMMAND_CLASS_MANUFACTURER_SPECIFIC,
+	COMMAND_CLASS_DEVICE_RESET_LOCALLY,
+	COMMAND_CLASS_POWERLEVEL,
+	COMMAND_CLASS_BATTERY,
+	COMMAND_CLASS_NOTIFICATION_V3,
+	COMMAND_CLASS_WAKE_UP,
+	COMMAND_CLASS_SUPERVISION
 #ifdef BOOTLOADER_ENABLED
-  ,COMMAND_CLASS_FIRMWARE_UPDATE_MD
-#endif
-#else
-  NULL
+		,COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2
 #endif
 };
 
 static APP_NODE_INFORMATION m_AppNIF = {
-  cmdClassListNonSecureNotIncluded, sizeof(cmdClassListNonSecureNotIncluded),
-  cmdClassListNonSecureIncludedSecure, sizeof(cmdClassListNonSecureIncludedSecure),
-  cmdClassListSecure, sizeof(cmdClassListSecure),
-  DEVICE_OPTIONS_MASK, GENERIC_TYPE, SPECIFIC_TYPE
+	cmdClassListNonSecureNotIncluded, sizeof(cmdClassListNonSecureNotIncluded),
+	cmdClassListNonSecureIncludedSecure, sizeof(cmdClassListNonSecureIncludedSecure),
+	cmdClassListSecure, sizeof(cmdClassListSecure),
+	DEVICE_OPTIONS_MASK, GENERIC_TYPE, SPECIFIC_TYPE
 };
 
+
+const char GroupName[]   = "Lifeline";
 CMD_CLASS_GRP  agiTableLifeLine[] = {AGITABLE_LIFELINE_GROUP};
 AGI_GROUP agiTableRootDeviceGroups[] = {AGITABLE_ROOTDEVICE_GROUPS};
 
+static const AGI_PROFILE lifelineProfile = {
+	ASSOCIATION_GROUP_INFO_REPORT_PROFILE_GENERAL,
+	ASSOCIATION_GROUP_INFO_REPORT_PROFILE_GENERAL_LIFELINE
+};
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Task Def
@@ -321,13 +328,16 @@ static	BYTE	mo = 0;
 
 #define SF_VERSION "1.0.0"
 
+
+static BYTE suppportedEvents = NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION;
+
 /////////////////////////////////////////////////////////////////////////////////////
 // Initilize 
 BYTE  ApplicationInitHW(BYTE bWakeupReason) {
 	wakeupReason = bWakeupReason;
 
 	LedControlInit();
-	LedOn(2);
+	LedOff(2);
 
 	v24 = !!PIN_GET(P24);
 	v36 = !!PIN_GET(P36);
@@ -337,10 +347,35 @@ BYTE  ApplicationInitHW(BYTE bWakeupReason) {
   return(TRUE);
 }
 
-BYTE ApplicationInitSW( void ) {
+void My_SerialSendStr(char *str) {
+	while (*str != 0) {
+		ZW_SerialPutByte(*str);
+		ZW_SerialFlush();  
+		str++;
+	}
+}
+
+BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
+  UNUSED(nvmStatus);
+
 #ifndef ZW_ISD51_DEBUG
   ZW_DEBUG_INIT(1152);
 #endif
+
+#ifdef WATCHDOG_ENABLED
+  ZW_WatchDogEnable();
+#endif
+
+	//ZW_UART0_zm5202_mode_enable(TRUE);
+  //ZW_InitSerialIf(1152);
+  //ZW_FinishSerialIf();
+	//My_SerialSendStr("WakeUp\r\n");
+	//while (ZW_SerialCheck()) {
+	//	BYTE x =  ZW_SerialGetByte();
+	//	ZW_SerialPutByte(x);
+	//	ZW_SerialFlush();  
+	//	LedToggle(2);
+	//}
 	
 	ZW_DEBUG_SEND_STR("\r\nWakeup:");
 	ZW_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
@@ -367,9 +402,9 @@ void ApplicationPoll(void) {
 #ifdef WATCHDOG_ENABLED
   ZW_WatchDogKick(); 
 #endif	
-	//ZW_DEBUG_SEND_STR("ApplicationPoll\r\n");	
 
-	
+	//ZW_DEBUG_SEND_STR("ApplicationPoll\r\n");	
+	//My_SerialSendStr("WakeUp\r\n");
 	task_in();
 	task_do();
 }
@@ -411,97 +446,152 @@ void LearnCompleted(BYTE bNodeID) {
 
 /////////////////////////////////////////////////////////////////////////////////////
 // ZWave Cmd, RF Relatives
-void Transport_ApplicationCommandHandler(BYTE  rxStatus, BYTE  sourceNode, 
-																					ZW_APPLICATION_TX_BUFFER *pCmd, BYTE   cmdLength) {
+received_frame_status_t Transport_ApplicationCommandHandlerEx(
+		RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+		ZW_APPLICATION_TX_BUFFER *pCmd,
+		BYTE cmdLength) {
+	received_frame_status_t frame_status = RECEIVED_FRAME_STATUS_NO_SUPPORT;
 
-  BYTE txOption;
+	ZW_DEBUG_SEND_STR("Transport_ApplicationCommandHandlerEx\r\n");	
 
-  txOption = ((rxStatus & RECEIVE_STATUS_LOW_POWER) ? 
-								TRANSMIT_OPTION_LOW_POWER : 0)
-             |	ZWAVE_PLUS_TX_OPTIONS;
-
-	ZW_DEBUG_SEND_STR("Transport_ApplicationCommandHandler\r\n");	
-
-  switch (pCmd->ZW_Common.cmdClass) {
-    case COMMAND_CLASS_VERSION:
-      handleCommandClassVersion(txOption, sourceNode, pCmd, cmdLength);
-      break;
+	switch (pCmd->ZW_Common.cmdClass) {
+		case COMMAND_CLASS_VERSION:
+			frame_status = handleCommandClassVersion(rxOpt, pCmd, cmdLength);
+			break;
 
 #ifdef BOOTLOADER_ENABLED
-    case COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2:
-      handleCommandClassFWUpdate(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_FIRMWARE_UPDATE_MD_V2:
+			frame_status = handleCommandClassFWUpdate(rxOpt, pCmd, cmdLength);
+			break;
 #endif
 
+		case COMMAND_CLASS_ASSOCIATION_GRP_INFO:
+			frame_status = handleCommandClassAssociationGroupInfo( rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_ASSOCIATION_GRP_INFO:
-      handleCommandClassAssociationGroupInfo( txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_ASSOCIATION:
+			frame_status = handleCommandClassAssociation(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_ASSOCIATION:
-			handleCommandClassAssociation(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_POWERLEVEL:
+			frame_status = handleCommandClassPowerLevel(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_POWERLEVEL:
-      handleCommandClassPowerLevel(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_MANUFACTURER_SPECIFIC:
+			frame_status = handleCommandClassManufacturerSpecific(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_MANUFACTURER_SPECIFIC:
-      handleCommandClassManufacturerSpecific(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_ZWAVEPLUS_INFO:
+			frame_status = handleCommandClassZWavePlusInfo(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_ZWAVEPLUS_INFO:
-      handleCommandClassZWavePlusInfo(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_BATTERY:
+			frame_status = handleCommandClassBattery(rxOpt, pCmd, cmdLength);
+			break;
 
-   case COMMAND_CLASS_BATTERY:
-      handleCommandClassBattery(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_NOTIFICATION_V3:
+			frame_status = handleCommandClassNotification(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_NOTIFICATION_V3:
-      handleCommandClassNotification(txOption, sourceNode, pCmd, cmdLength);
-      break;
+		case COMMAND_CLASS_WAKE_UP:
+			HandleCommandClassWakeUp(rxOpt, pCmd, cmdLength);
+			break;
 
-    case COMMAND_CLASS_WAKE_UP:
-      HandleCommandClassWakeUp(txOption, sourceNode, pCmd, cmdLength);
-      break;
-  }
+		case COMMAND_CLASS_SUPERVISION:
+			frame_status = handleCommandClassSupervision(rxOpt, pCmd, cmdLength);
+			break;
 
+		case COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION_V2:
+			frame_status = handleCommandClassMultiChannelAssociation(rxOpt, pCmd, cmdLength);
+			break;
+	}
+	return frame_status;
 }
-	
+
 BYTE handleCommandClassVersionAppl(BYTE cmdClass) {
+	BYTE commandClassVersion = UNKNOWN_VERSION;
+
 	ZW_DEBUG_SEND_STR("handleCommandClassVersionAppl\r\n");	
+	switch (cmdClass) {
+		case COMMAND_CLASS_VERSION:
+			commandClassVersion = CommandClassVersionVersionGet();
+			break;
 
-  switch (cmdClass)
-  {
-    case COMMAND_CLASS_VERSION:               return CommandClassVersionVersionGet();
-    case COMMAND_CLASS_POWERLEVEL:            return CommandClassPowerLevelVersionGet();
-    case COMMAND_CLASS_MANUFACTURER_SPECIFIC: return CommandClassManufacturerVersionGet();
-    case COMMAND_CLASS_ASSOCIATION:           return CommandClassAssociationVersionGet();
-    case COMMAND_CLASS_ASSOCIATION_GRP_INFO:  return CommandClassAssociationGroupInfoVersionGet();
-    case COMMAND_CLASS_DEVICE_RESET_LOCALLY:  return CommandClassDeviceResetLocallyVersionGet();
-    case COMMAND_CLASS_ZWAVEPLUS_INFO:        return CommandClassZWavePlusVersion();
-    case COMMAND_CLASS_BASIC:                 return CommandClassBasicVersionGet();
-    case COMMAND_CLASS_BATTERY:               return CommandClassBatteryVersionGet();
-    case COMMAND_CLASS_NOTIFICATION_V3:       return CommandClassNotificationVersionGet();
-    case COMMAND_CLASS_WAKE_UP:               return CmdClassWakeupVersion();
 #ifdef BOOTLOADER_ENABLED
-    case COMMAND_CLASS_FIRMWARE_UPDATE_MD:    return CommandClassFirmwareUpdateMdVersionGet();
+		case COMMAND_CLASS_FIRMWARE_UPDATE_MD:
+			commandClassVersion = CommandClassFirmwareUpdateMdVersionGet();
+			break;
 #endif
-#ifdef SECURITY
-    case COMMAND_CLASS_SECURITY:              return CommandClassSecurityVersionGet();
-#endif
-    default:
-     return UNKNOWN_VERSION;
-  }
 
-	return UNKNOWN_VERSION;
+		case COMMAND_CLASS_POWERLEVEL:
+			commandClassVersion = CommandClassPowerLevelVersionGet();
+			break;
+
+		case COMMAND_CLASS_MANUFACTURER_SPECIFIC:
+			commandClassVersion = CommandClassManufacturerVersionGet();
+			break;
+
+		case COMMAND_CLASS_ASSOCIATION:
+			commandClassVersion = CommandClassAssociationVersionGet();
+			break;
+
+		case COMMAND_CLASS_ASSOCIATION_GRP_INFO:
+			commandClassVersion = CommandClassAssociationGroupInfoVersionGet();
+			break;
+
+		case COMMAND_CLASS_DEVICE_RESET_LOCALLY:
+			commandClassVersion = CommandClassDeviceResetLocallyVersionGet();
+			break;
+
+		case COMMAND_CLASS_ZWAVEPLUS_INFO:
+			commandClassVersion = CommandClassZWavePlusVersion();
+			break;
+
+		case COMMAND_CLASS_BATTERY:
+			commandClassVersion = CommandClassBatteryVersionGet();
+			break;
+
+		case COMMAND_CLASS_NOTIFICATION_V3:
+			commandClassVersion = CommandClassNotificationVersionGet();
+			break;
+
+		case COMMAND_CLASS_WAKE_UP:
+			commandClassVersion = CmdClassWakeupVersion();
+			break;
+
+		case COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION_V2:
+			commandClassVersion = CmdClassMultiChannelAssociationVersion();
+			break;
+
+		case COMMAND_CLASS_SUPERVISION:
+			commandClassVersion = CommandClassSupervisionVersionGet();
+			break;
+
+			/*
+			 * If both S0 & S2 are supported, ZW_Transport_CommandClassVersionGet can be used in default
+			 * instead of handling each of the CCs. Please see the other Z-Wave Plus apps for an example.
+			 *
+			 * In this case, S0 is not supported. Hence we must not return the version of S0 CC. Using
+			 * ZW_Transport_CommandClassVersionGet will return the version.
+			 */
+
+		case COMMAND_CLASS_SECURITY_2:
+			commandClassVersion = SECURITY_2_VERSION;
+			break;
+
+		case COMMAND_CLASS_TRANSPORT_SERVICE_V2:
+			commandClassVersion = TRANSPORT_SERVICE_VERSION_V2;
+			break;
+
+		default:
+			commandClassVersion = UNKNOWN_VERSION;
+	}
+	return commandClassVersion;
 }
 
 
 BYTE handleNbrFirmwareVersions(void) {
 	ZW_DEBUG_SEND_STR("handleNbrFirmwareVersions\r\n");	
-
   return 1; 
 }
 
@@ -518,15 +608,33 @@ void handleGetFirmwareVersion( BYTE bFirmwareNumber, VG_VERSION_REPORT_V2_VG* pV
   }
 }
 
-void handleBasicSetCommand(  BYTE val ) {
+WORD handleFirmWareIdGet( BYTE n) {
+	if(n == 0)  {
+		return APP_FIRMWARE_ID;
+	}
+	return 0;
+}
+
+void handleBasicSetCommand(  BYTE val, BYTE endpoint ) {
 	ZW_DEBUG_SEND_STR("handleBasicSetCommand\r\n");
 
 }
 
-BYTE getAppBasicReport(void) {
+BYTE getAppBasicReport(BYTE endpoint) {
 	ZW_DEBUG_SEND_STR("getAppBasicReport\r\n");
 
   return 0;
+}
+
+BYTE getAppBasicReportTarget(BYTE endpoint) {
+  UNUSED(endpoint);
+  return 0;
+}
+
+BYTE getAppBasicReportDuration(BYTE endpoint) {
+	UNUSED(endpoint);
+	/* CHANGE THIS - Fill in your application code here */
+	return 0;
 }
 
 
@@ -535,10 +643,32 @@ BYTE GetMyNodeID(void) {
   return myEnv.NodeID;
 }
 
+void ApplicationSecurityEvent(s_application_security_event_data_t *securityEvent) {
+	switch (securityEvent->event) {
+#ifdef APP_SUPPORTS_CLIENT_SIDE_AUTHENTICATION
+		case E_APPLICATION_SECURITY_EVENT_S2_INCLUSION_REQUEST_DSK_CSA:
+			ZW_SetSecurityS2InclusionPublicDSK_CSA(&sCSAResponse);
+			break;
+#endif /* APP_SUPPORTS_CLIENT_SIDE_AUTHENTICATION */
+		default:
+			break;
+	}
+}
+
+BYTE ApplicationSecureKeysRequested(void) {
+	return REQUESTED_SECURITY_KEYS;
+}
+
+BYTE ApplicationSecureAuthenticationRequested(void) {
+	return REQUESTED_SECURITY_AUTHENTICATION;
+}
+
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Sleep 
 PCB(mySleepTimerFunc)(void) {
+
 	BYTE mode;
 	BYTE mask;
 	BYTE timeout;
@@ -591,7 +721,7 @@ PCB(mySleepTimerFunc)(void) {
 
 	ZW_TIMER_CANCEL(mySleepTimerFunc);
 	mySleepTimer = 0xff;
-	LedOff(2);
+	//LedOn(2);
 
 
 	ZW_DEBUG_SEND_STR("Go to sleep with mode:");
@@ -616,6 +746,9 @@ PCB(mySetPowerDownTimeoutWakeUpStateCheck)(BYTE timeout) {
 	ZW_DEBUG_SEND_STR("\r\n");
 
 	ApplTimerStop(&myPowerTimer);
+	if (timeout > 2) {
+		timeout = 2;
+	}
 	myPowerTimer = ApplTimerStart(misc_zw_setpowerdown_timeout, timeout, 1);
 	myRfTimeout = !!timeout;
 }
@@ -680,10 +813,10 @@ BYTE misc_rf_failcnt() {
 	return (myEnv.RfFailCnt);
 }
 void misc_rf_failcnt_save() {
-	conf_set((WORD)&nvmApplDescriptor.RfFailCnt, &myEnv.RfFailCnt, 1);
+	//conf_set((WORD)&nvmApplDescriptor.RfFailCnt, &myEnv.RfFailCnt, 1);
 }
 void misc_rf_failcnt_load() {
-	conf_get((WORD)&nvmApplDescriptor.RfFailCnt, &myEnv.RfFailCnt, 1);
+	//conf_get((WORD)&nvmApplDescriptor.RfFailCnt, &myEnv.RfFailCnt, 1);
 }
 void misc_rf_failcnt_inc() {
 	if (myEnv.RfFailCnt < 0xff) {
@@ -715,8 +848,11 @@ void misc_zw_send_motion() {
 	ZW_DEBUG_SEND_NUM(notificationEvent);
 	ZW_DEBUG_SEND_STR("\r\n");
 
-  NotificationEventTrigger(notificationType,notificationEvent);
-  ret = CmdClassNotificationReport(0x01, notificationType, notificationEvent,misc_zw_send_motion_completed);
+	NotificationEventTrigger(&lifelineProfile,
+			suppportedEvents,
+			NULL, 0,
+			ENDPOINT_ROOT);
+  ret = CmdClassNotificationReport(&lifelineProfile, 0x00, notificationType, notificationEvent,misc_zw_send_motion_completed);
 
 	ZW_DEBUG_SEND_STR("misc_zw_send_motion ret:");
 	ZW_DEBUG_SEND_NUM(ret);
@@ -793,6 +929,7 @@ void misc_zw_set_default() {
   //CmdClassWakeUpNotificationMemorySetDefault();
 }
 void misc_zw_init() {
+
 	if (misc_node_included()) {
 	} else {
     Transport_SetDefault();
@@ -800,15 +937,19 @@ void misc_zw_init() {
 	}
 
 	AssociationInit(FALSE);
-  AGI_LifeLineGroupSetup(agiTableLifeLine, 
-				(sizeof(agiTableLifeLine)/sizeof(CMD_CLASS_GRP)));
-  AGI_ResourceGroupSetup(agiTableRootDeviceGroups, 
-				(sizeof(agiTableRootDeviceGroups)/sizeof(AGI_GROUP)), 1);
+
+	AGI_Init();
+	AGI_LifeLineGroupSetup(agiTableLifeLine, (sizeof(agiTableLifeLine)/sizeof(CMD_CLASS_GRP)), GroupName, ENDPOINT_ROOT );
+	AGI_ResourceGroupSetup(agiTableRootDeviceGroups, (sizeof(agiTableRootDeviceGroups)/sizeof(AGI_GROUP)), ENDPOINT_ROOT);
 
   InitNotification();
-  AddNotification(NOTIFICATION_REPORT_BURGLAR_V3,
-				NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION,
-				&mo, 1);
+	AddNotification(
+			&lifelineProfile,
+			NOTIFICATION_TYPE_HOME_SECURITY,
+			&suppportedEvents,
+			1,
+			FALSE,
+			0);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -974,6 +1115,7 @@ BYTE btn_pressed() {
 	return 0;
 #endif
 }
+
 // pir pressed
 BYTE pir_triger() {
 	if (v == 0x00) {
@@ -1267,6 +1409,7 @@ static BYTE time_battery(void *arg) {
 /////////////////////////////////////////////////////////////////////////////////////
 // Unused Callback
 void ApplicationRfNotify(BYTE rfState) {
+ UNUSED(rfState);
 }
 void ApplicationTestPoll(void) {
 }

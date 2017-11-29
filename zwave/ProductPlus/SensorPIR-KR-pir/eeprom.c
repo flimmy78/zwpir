@@ -1,12 +1,12 @@
 /****************************************************************************
  *
- * Copyright (c) 2001-2011
+ * Copyright (c) 2001-2014
  * Sigma Designs, Inc.
  * All Rights Reserved
  *
  *---------------------------------------------------------------------------
  *
- * Description: NVM layout for all node types
+ * Description: Application NVM variable definitions
  *
  * Author:  Erik Friis Harck
  *
@@ -15,47 +15,85 @@
  * Last Changed:     $Date: 2012-03-05 10:45:45 +0200 (Wed, 5 Mar 2012) $
  *
  ****************************************************************************/
+#pragma USERCLASS(CONST=NVM)
 
 /* Make sure compiler won't shuffle around with these variables,            */
 /* as there are external dependencies.                                      */
-/* All these variables needs to initialized, because the compiler groups    */
-/* the variables into different classes for uninitialized/initialized       */
-/* when ordering them. To keep them in order... Keep them all initialized.  */
+/* Note from Keil C51 manual:                                               */
+/* Variables with memory type, initilalization, and without initilalization */
+/* have all different tables. Therefore only variables with the same        */
+/* attributes are kept within order.                                        */
+/* Note from Keil knowledgebase: http://www.keil.com/support/docs/901.htm   */
+/* "The order is not necessarily taken from the variable declarations, but  */
+/* the first use of the variables."                                         */
+/* Therefore, when using #pragma ORDER to order variables, declare them in  */
+/* the order they should be in a collection. And none of them may be        */
+/* declared or known in any way from other header files.                    */
 #pragma ORDER
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
-
 #include <ZW_basis_api.h>
-#include <eeprom.h>
+#include "eeprom.h"
 #include <ZW_nvm_descriptor.h>
 
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
-extern unsigned char _ZW_VERSION_;
-/***********************/
-/*      NVM layout     */
-/***********************/
-/* EEPROM binary battery sensor node layout */
 
-  t_nvmApplDescriptor far nvmApplDescriptor;
+/************************************/
+/*      NVM variable definition     */
+/************************************/
 
-/* NVM descriptor for firmware */
-t_nvmDescriptor far nvmDescriptor =
+/*--------------------------------------------------------------------------*/
+/* NVM layout SensorPIR (as in t_nvmModule) (begin)                         */
+
+/* Offset from &nvmModule where nvmModuleDescriptor structure is placed     */
+t_NvmModuleSize far nvmApplicationSize = (t_NvmModuleSize)&_FD_EEPROM_L_;
+
+// Used by Association module.
+BYTE far EEOFFSET_ASSOCIATION_START_far[(NUMBER_OF_ENDPOINTS_NVM_MAX + 1) * ASSOCIATION_SIZE_NVM_MAX];
+BYTE far EEOFFSET_ASSOCIATION_MAGIC_far;
+BYTE far EEOFFSET_ASSOCIATION_ENDPOINT_START_far[(NUMBER_OF_ENDPOINTS_NVM_MAX + 1) * ASSOCIATION_SIZE_NVM_MAX];
+BYTE far EEOFFSET_ASSOCIATION_ENDPOINT_MAGIC_far;
+EEOFFSET_TRANSPORT_CAPABILITIES_STRUCT far EEOFFSET_TRANSPORT_CAPABILITIES_START_far[(NUMBER_OF_ENDPOINTS_NVM_MAX + 1) * ASSOCIATION_SIZE_NVM_MAX];
+BYTE far EEOFFSET_MAGIC_SDK_6_70_ASSOCIATION_SECURE_far;
+
+// Used by battery_plus module.
+DWORD far EEOFFSET_SLEEP_PERIOD_far;
+
+// Used by Wake Up CC.
+BYTE far EEOFFSET_MASTER_NODEID_far;
+
+// Used by the application.
+BYTE far EEOFFSET_alarmStatus_far[MAX_NOTIFICATIONS];
+BYTE far EEOFFSET_MAGIC_far;
+
+/* NVM module descriptor for module. Located at the end of NVM module.      */
+/* During the initialization phase, the NVM still contains the NVM contents */
+/* from the old version of the firmware.                                    */
+t_nvmModuleDescriptor far nvmApplicationDescriptor =
 {
-  /* TODO: Fill in your unique and assigned manufacturer ID here                */
-  APP_MANUFACTURER_ID,                          /* WORD manufacturerID;         */
-  /* TODO: Fill in your own unique firmware ID here                             */
-  APP_FIRMWARE_ID,                              /* WORD firmwareID;             */
-  /* TODO: Fill in your own unique Product Type ID here                         */
-  APP_PRODUCT_TYPE_ID,                          /* WORD productTypeID;          */
-  /* TODO: Fill in your own unique Product ID here                              */
-  APP_PRODUCT_ID,                               /* WORD productID;              */
-  /* Unique Application Version (from config_app.h)                             */
-  (WORD)&_APP_VERSION_,                         /* WORD applicationVersion;     */
-  /* Unique Z-Wave protocol Version (from config_lib.h)                         */
-  (WORD)&_ZW_VERSION_,                          /* WORD zwaveProtocolVersion;   */
+  (t_NvmModuleSize)&_FD_EEPROM_L_,      /* t_NvmModuleSize wNvmModuleSize   */
+  NVM_MODULE_TYPE_APPLICATION,          /* eNvmModuleType bNvmModuleType    */
+  (WORD)&_APP_VERSION_                  /* WORD wNvmModuleVersion           */
+};
+
+/* NVM layout SensorPIR (as in t_nvmModule) (end)                           */
+/*--------------------------------------------------------------------------*/
+
+/* NVM module update descriptor for this new version of firmware. Located   */
+/* in code space.                                                           */
+const t_nvmModuleUpdate code nvmApplicationUpdate =
+{
+  (p_nvmModule)&nvmApplicationSize,     /* nvmModulePtr                     */
+  /* nvmApplicationDescriptor is the first new NVM variable since devkit_6_5x_branch */
+  (t_NvmModuleSize)((WORD)&nvmApplicationDescriptor),  /* wNvmModuleSizeOld */
+  {
+    (t_NvmModuleSize)&_FD_EEPROM_L_,    /* t_NvmModuleSize wNvmModuleSize   */
+    NVM_MODULE_TYPE_APPLICATION,        /* eNvmModuleType bNvmModuleType    */
+    (WORD)&_APP_VERSION_                /* WORD wNvmModuleVersion           */
+  }
 };
 

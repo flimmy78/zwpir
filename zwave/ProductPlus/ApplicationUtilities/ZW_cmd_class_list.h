@@ -1,21 +1,8 @@
 /**
- *
- * Copyright (c) 2001-2014
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- * @file ZW_cmd_class_list.h
- *
- * @brief Validation of command class agains application NIF's
- *
- * Author: Thomas Roll
- *
- * Last Changed By: $Author: tro $
- * Revision: $Revision: 0.00 $
- * Last Changed: $Date: 2014/12/08 12:54:03 $
- *
+ * @file
+ * Validation of command class against application NIFs.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
  */
-
 
 #ifndef _ZW_CMD_CLASS_LIST_H_
 #define _ZW_CMD_CLASS_LIST_H_
@@ -23,6 +10,8 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+#include <ZW_security_api.h>
+
 
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
@@ -54,7 +43,7 @@ BOOL CheckCmdClass(BYTE cmdClass,
 /**
  * @brief CmdClassSupported
  * Check incoming frame command class is in secure- or nonsecure-list
- * @param[in] frameSecure, secure (TRUE) or nonsecure (FALSE)
+ * @param[in] eKey The security key used
  * @param[in] cmdClass incoming frames cmdclass
  * @param[in] pSecurelist secure list
  * @param[in] securelistLen secure list length
@@ -63,7 +52,7 @@ BOOL CheckCmdClass(BYTE cmdClass,
  * @return boolean if commad class is in list.
  */
 BOOL
-CmdClassSupported(BOOL frameSecure,
+CmdClassSupported(security_key_t eKey,
                   BYTE cmdClass,
                   BYTE* pSecurelist,
                   BYTE securelistLen,

@@ -19,10 +19,12 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
-#include <ZW_stdint.h>
 #include <ZW_basis_api.h>
 #include <ZW_tx_mutex.h>
 #include <ZW_TransportLayer.h>
+#include "eeprom.h"
+
+#include "config_app.h"
 #include <CommandClassPowerLevel.h>
 #include <ZW_basis_api.h>
 #include <ZW_timer_api.h>
@@ -32,6 +34,7 @@
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
+
 #ifdef ZW_DEBUG_POW
 #define ZW_DEBUG_POW_SEND_BYTE(data) ZW_DEBUG_SEND_BYTE(data)
 #define ZW_DEBUG_POW_SEND_STR(STR) ZW_DEBUG_SEND_STR(STR)
@@ -50,17 +53,18 @@
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
 
-static uint8_t timerPowerLevelHandle = 0;
-static uint8_t timerPowerLevelSec = 0;
 static uint8_t testNodeID = ZW_TEST_NOT_A_NODEID;
-static uint8_t DelayTestFrameHandle = 0;
-static uint8_t testSourceNodeID;
 static uint8_t testPowerLevel;
-static uint16_t testFrameCount;
+static uint8_t testSourceNodeID;
 static uint16_t testFrameSuccessCount;
 static uint8_t testState = POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_FAILED;
-static uint8_t powerLevelBackup = normalPower;
-static uint8_t txOption;
+
+static uint8_t timerPowerLevelHandle = 0;
+static uint8_t timerPowerLevelSec = 0;
+static uint8_t DelayTestFrameHandle = 0
+;
+static uint16_t testFrameCount;
+static uint8_t currentPower = normalPower;
 
 VOID_CALLBACKFUNC(pPowStopPowerDownTimer) (void) = NULL;
 VOID_CALLBACKFUNC(pPowStartPowerDownTimer) (void) = NULL;
@@ -72,58 +76,77 @@ VOID_CALLBACKFUNC(pPowStartPowerDownTimer) (void) = NULL;
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
+
 void ZCB_DelayTestFrame(void);
 static void SendTestReport(void);
 void ZCB_PowerLevelTimeout(void);
-void ZCB_SendTestDone(uint8_t bStatus);
-static void composeTestNodeReport(ZW_APPLICATION_TX_BUFFER * pBuffer);
+void ZCB_SendTestDone(uint8_t bStatus, TX_STATUS_TYPE *txStatusReport);
 
-/**
- * Send latest test results.
- */
-static void SendTestReport(void)
-{
-  /*
-   * Get a request buffer without handing a callback function because we don't care whether it is
-   * received or not. The recipient must ask for another report if this one's lost.
-   */
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(NULL);
-  /*Check pTxBuf is free*/
-  if (IS_NULL(pTxBuf))
-  {
-    return;
-  }
-
-  composeTestNodeReport(pTxBuf);
-
-  if (FALSE == Transport_SendRequest(
-                                     testSourceNodeID,
-                                     pTxBuf,
-                                     sizeof(pTxBuf->ZW_PowerlevelTestNodeReportFrame),
-                                     ZWAVE_PLUS_TX_OPTIONS,
-                                     ZCB_RequestJobStatus,
-                                     FALSE))
-  {
-    /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-    FreeRequestBuffer();
-  }
-}
-
-/*=============================   SendTestDone   ============================
- **    Test frame has been transmitted to DUT and the result is noted for
- **    later reporting. If not finished then another Test frame is transmitted.
- **    If all test frames has been transmitted then the test is stopped
- **    and the final result is reported to the PowerlevelTest initiator.
+/*===========================   SendTestReport   ============================
+ **    Send current Powerlevel test results
  **
  **    This is an application function example
  **
  **--------------------------------------------------------------------------*/
-PCB(ZCB_SendTestDone) (uint8_t bStatus)
+static void
+SendTestReport(void)
 {
-  if (TRANSMIT_COMPLETE_OK == bStatus)
+  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(NULL);
+  /*Check pTxBuf is free*/
+  if (NON_NULL(pTxBuf))
+  {
+    MULTICHAN_NODE_ID masterNode;
+    TRANSMIT_OPTIONS_TYPE_SINGLE_EX txOptionsEx;
+
+    masterNode.node.nodeId = testSourceNodeID;
+    masterNode.node.endpoint = 0;
+    masterNode.node.BitAddress = 0;
+    masterNode.nodeInfo.BitMultiChannelEncap = 0;
+    masterNode.nodeInfo.security = GetHighestSecureLevel(ZW_GetSecurityKeys());
+    txOptionsEx.txOptions = ZWAVE_PLUS_TX_OPTIONS;
+    txOptionsEx.sourceEndpoint = 0;
+    txOptionsEx.pDestNode = &masterNode;
+
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmdClass = COMMAND_CLASS_POWERLEVEL;
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmd = POWERLEVEL_TEST_NODE_REPORT;
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.testNodeid = testNodeID;
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.statusOfOperation = testState;
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.testFrameCount1 =
+        (uint8_t)(testFrameSuccessCount >> 8);
+    pTxBuf->ZW_PowerlevelTestNodeReportFrame.testFrameCount2 = (uint8_t)testFrameSuccessCount;
+
+    if (ZW_TX_IN_PROGRESS != Transport_SendRequestEP(
+        (uint8_t*)pTxBuf,
+        sizeof(pTxBuf->ZW_PowerlevelTestNodeReportFrame),
+        &txOptionsEx,
+        ZCB_RequestJobStatus))
+    {
+      /*Free transmit-buffer mutex*/
+      FreeRequestBuffer();
+    }
+  }
+  return;
+}
+
+/**
+ * @brief Test frame has been transmitted to DUT and the result is noted for later reporting. If
+ * not finished then another Test frame is transmitted. If all test frames has been transmitted
+ * then the test is stopped and the final result is reported to the PowerlevelTest initiator.
+ * @param bStatus Status of transmission.
+ * @param txStatusReport Status report.
+ */
+PCB(ZCB_SendTestDone) (
+uint8_t bStatus,
+                       TX_STATUS_TYPE *txStatusReport
+                       )
+{
+  UNUSED(txStatusReport);
+
+  if (bStatus == TRANSMIT_COMPLETE_OK)
   {
     testFrameSuccessCount++;
   }
+
   if (0 != DelayTestFrameHandle)
   {
     TimerCancel(DelayTestFrameHandle);
@@ -132,6 +155,9 @@ PCB(ZCB_SendTestDone) (uint8_t bStatus)
   if (testFrameCount && (--testFrameCount))
   {
     DelayTestFrameHandle = TimerStart(ZCB_DelayTestFrame, 4, TIMER_ONE_TIME);
+    if ((uint8_t)-1 == DelayTestFrameHandle)
+    {
+    }
   }
   else
   {
@@ -143,7 +169,7 @@ PCB(ZCB_SendTestDone) (uint8_t bStatus)
     {
       testState = POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_FAILED;
     }
-    ZW_RFPowerLevelSet(powerLevelBackup); // Restore the original power level.
+    ZW_RFPowerLevelSet(currentPower); /* Back to previous setting */
     SendTestReport();
     if (NON_NULL(pPowStartPowerDownTimer))
     {
@@ -161,15 +187,11 @@ PCB(ZCB_SendTestDone) (uint8_t bStatus)
 void
 PowerLevelTimerCancel(void)
 {
-  ZW_DEBUG_POW_SEND_STR("PowerLevelTimerCancel");
-  ZW_DEBUG_POW_SEND_NL();
   TimerCancel(timerPowerLevelHandle);
   timerPowerLevelHandle = 0;
   if (NON_NULL(pPowStartPowerDownTimer))
   {
     /*Stop Powerdown timer because Test frame is send*/
-    ZW_DEBUG_POW_SEND_STR("pPowStartPowerDownTimer");
-    ZW_DEBUG_POW_SEND_NL();
     pPowStartPowerDownTimer();
   }
 
@@ -181,9 +203,6 @@ PowerLevelTimerCancel(void)
  */
 PCB(ZCB_PowerLevelTimeout) (void)
 {
-  ZW_DEBUG_POW_SEND_STR("ZCB_PowerLevelTimeout TO ");
-  ZW_DEBUG_POW_SEND_NUM(timerPowerLevelSec);
-  ZW_DEBUG_POW_SEND_NL();
   if (!--timerPowerLevelSec)
   {
     ZW_RFPowerLevelSet(normalPower); /* Reset powerlevel to normalPower */
@@ -191,25 +210,27 @@ PCB(ZCB_PowerLevelTimeout) (void)
   }
 }
 
-/**
- * Starts a powerlevel test.
- */
+/*===============================   StartTest   ==============================
+ **    Start the powerlevel test run
+ **
+ **    This is an application function example
+ **
+ **--------------------------------------------------------------------------*/
 static void StartTest(void)
 {
   if (POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_INPROGRESS != testState)
   {
     testState = POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_INPROGRESS;
-    powerLevelBackup = ZW_RFPowerLevelGet(); // Backup the current power level.
+    currentPower = ZW_RFPowerLevelGet(); /* Get current (normalPower) */
     ZW_RFPowerLevelSet(testPowerLevel);
     DelayTestFrameHandle = TimerStart(ZCB_DelayTestFrame, 4, TIMER_ONE_TIME);
   }
 }
 
 /**
- * Timeout callback with the purpose of delaying the transmission of a test frame to have time for
- * responding to a Powerlevel Test Node Get command.
+ * @brief delay test frame 10 mSec for open up a window responding Get commands on the node.
  */
-PCB(ZCB_DelayTestFrame)(void)
+PCB(ZCB_DelayTestFrame) (void)
 {
   DelayTestFrameHandle = 0;
   if (TRUE == ZW_SendTestFrame(testNodeID, testPowerLevel, ZCB_SendTestDone))
@@ -222,37 +243,15 @@ PCB(ZCB_DelayTestFrame)(void)
   }
 }
 
-/*==============================   loadStatusPowerLevel  ============
- **
- **  Function:  loads power level status from nvram
- **
- **  Side effects: None
- **
- **--------------------------------------------------------------------------*/
-void
-loadStatusPowerLevel(VOID_CALLBACKFUNC(pStopPowerDownTimer) (void),VOID_CALLBACKFUNC(pStartPowerDownTimer)(void))
+void loadStatusPowerLevel(VOID_CALLBACKFUNC(pStopPowerDownTimer) (void),VOID_CALLBACKFUNC(pStartPowerDownTimer)(void))
 {
-  ZW_DEBUG_POW_SEND_STR("loadStatusPowerLevel");
-  ZW_DEBUG_POW_SEND_NL();
   pPowStopPowerDownTimer = pStopPowerDownTimer;
   pPowStartPowerDownTimer = pStartPowerDownTimer;
   timerPowerLevelSec = 0;
 }
 
-/*==============================   loadInitStatusPowerLevel  ============
- **
- **  Function:  loads initial power level status from nvram
- **
- **  Side effects: None
- **
- **--------------------------------------------------------------------------*/
-void
-loadInitStatusPowerLevel(VOID_CALLBACKFUNC(pStopPowerDownTimer) (void),VOID_CALLBACKFUNC(pStartPowerDownTimer)(void))
+void loadInitStatusPowerLevel(VOID_CALLBACKFUNC(pStopPowerDownTimer)(void), VOID_CALLBACKFUNC(pStartPowerDownTimer)(void))
 {
-
-  ZW_DEBUG_POW_SEND_STR("loadInitStatusPowerLevel");
-  ZW_DEBUG_POW_SEND_NL();
-
   pPowStopPowerDownTimer = pStopPowerDownTimer;
   pPowStartPowerDownTimer = pStartPowerDownTimer;
   timerPowerLevelSec = 0;
@@ -263,19 +262,23 @@ loadInitStatusPowerLevel(VOID_CALLBACKFUNC(pStopPowerDownTimer) (void),VOID_CALL
   testState = POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_FAILED;
 }
 
-void handleCommandClassPowerLevel(
-                                  uint8_t option,
-                                  uint8_t sourceNode,
-                                  ZW_APPLICATION_TX_BUFFER * pCmd,
-                                  uint8_t cmdLength)
+received_frame_status_t
+handleCommandClassPowerLevel(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  uint8_t cmdLength)
 {
-  ZW_APPLICATION_TX_BUFFER * pTxBuf;
-  txOption = option;
+  UNUSED(cmdLength);
+
+  if (TRUE == Check_not_legal_response_job(rxOpt))
+  {
+    /*Do not support endpoint bit-addressing */
+    return RECEIVED_FRAME_STATUS_FAIL;
+  }
 
   switch (pCmd->ZW_Common.cmd)
   {
     case POWERLEVEL_SET:
-
       if (pCmd->ZW_PowerlevelSetFrame.powerLevel <= miniumPower)
       {
 
@@ -306,42 +309,49 @@ void handleCommandClassPowerLevel(
           TIMER_FOREVER);
           ZW_RFPowerLevelSet(pCmd->ZW_PowerlevelSetFrame.powerLevel);
         }
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
     break;
 
     case POWERLEVEL_GET:
-      pTxBuf = GetResponseBuffer();
+      {
+      ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
       /*Check pTxBuf is free*/
       if (NON_NULL(pTxBuf))
       {
+        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+        RxToTxOptions(rxOpt, &pTxOptionsEx);
         pTxBuf->ZW_PowerlevelReportFrame.cmdClass = COMMAND_CLASS_POWERLEVEL;
         pTxBuf->ZW_PowerlevelReportFrame.cmd = POWERLEVEL_REPORT;
         pTxBuf->ZW_PowerlevelReportFrame.powerLevel = ZW_RFPowerLevelGet();
         pTxBuf->ZW_PowerlevelReportFrame.timeout = timerPowerLevelSec;
-        if (FALSE == Transport_SendResponse(
-                                            sourceNode,
-                                            pTxBuf,
-                                            sizeof(pTxBuf->ZW_PowerlevelReportFrame),
-                                            option,
-                                            ZCB_ResponseJobStatus))
+        if (ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
+                                                          (uint8_t *)pTxBuf,
+                                                          sizeof(pTxBuf->ZW_PowerlevelReportFrame),
+                                                          pTxOptionsEx,
+                                                          ZCB_ResponseJobStatus))
         {
           /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
           FreeResponseBuffer();
         }
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
+    }
+    return RECEIVED_FRAME_STATUS_FAIL;
     break;
 
     case POWERLEVEL_TEST_NODE_SET:
       if (POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_INPROGRESS == testState) // 0x02
       {
-        return;
+        return RECEIVED_FRAME_STATUS_SUCCESS;
       }
 
-      testSourceNodeID = sourceNode;
+      testSourceNodeID = rxOpt->sourceNode.nodeId;
       testNodeID = pCmd->ZW_PowerlevelTestNodeSetFrame.testNodeid;
       testPowerLevel = pCmd->ZW_PowerlevelTestNodeSetFrame.powerLevel;
-      testFrameCount = (((uint16_t)pCmd->ZW_PowerlevelTestNodeSetFrame.testFrameCount1) << 8) & 0xFF00;
-      testFrameCount |= ((uint16_t)pCmd->ZW_PowerlevelTestNodeSetFrame.testFrameCount2) & 0x00FF;
+      testFrameCount = (((uint16_t)pCmd->ZW_PowerlevelTestNodeSetFrame.testFrameCount1) << 8);
+      testFrameCount |= (uint16_t)pCmd->ZW_PowerlevelTestNodeSetFrame.testFrameCount2;
       testFrameSuccessCount = 0;
 
       if (testFrameCount)
@@ -353,71 +363,69 @@ void handleCommandClassPowerLevel(
         testState = POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_FAILED;
         SendTestReport();
       }
+      return RECEIVED_FRAME_STATUS_SUCCESS;
     break;
 
     case POWERLEVEL_TEST_NODE_GET:
-      pTxBuf = GetResponseBuffer();
-      /*Check pTxBuf is free*/
-      if (IS_NULL(pTxBuf))
       {
-        return;
-      }
+        ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
+        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+        /*Check pTxBuf is free*/
+        if (IS_NULL(pTxBuf))
+        {
+          return RECEIVED_FRAME_STATUS_FAIL;
+        }
 
-      composeTestNodeReport(pTxBuf);
+        RxToTxOptions(rxOpt, &pTxOptionsEx);
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmdClass = COMMAND_CLASS_POWERLEVEL;
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmd = POWERLEVEL_TEST_NODE_REPORT;
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.testNodeid = testNodeID;
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.statusOfOperation = testState;
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.testFrameCount1 = (uint8_t)(testFrameSuccessCount
+                                                                             >> 8);
+        pTxBuf->ZW_PowerlevelTestNodeReportFrame.testFrameCount2 = (uint8_t)testFrameSuccessCount;
 
-      if (FALSE == Transport_SendResponse(
-                                          sourceNode,
-                                          pTxBuf,
-                                          sizeof(pTxBuf->ZW_PowerlevelTestNodeReportFrame),
-                                          txOption,
-                                          ZCB_ResponseJobStatus))
-      {
-        /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-        FreeResponseBuffer();
+        if (ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
+            (uint8_t *)pTxBuf,
+            sizeof(pTxBuf->ZW_PowerlevelTestNodeReportFrame),
+            pTxOptionsEx,
+            ZCB_ResponseJobStatus))
+        {
+          /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
+          FreeResponseBuffer();
+        }
       }
+      return RECEIVED_FRAME_STATUS_SUCCESS;
     break;
 
     default:
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
-/**
- * Composes a Powerlevel Test Node Report into a given buffer.
- * @param pBuffer Pointer to buffer.
- */
-static void composeTestNodeReport(ZW_APPLICATION_TX_BUFFER * pBuffer)
-{
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.cmdClass = COMMAND_CLASS_POWERLEVEL;
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.cmd = POWERLEVEL_TEST_NODE_REPORT;
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.testNodeid = testNodeID;
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.statusOfOperation = testState;
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.testFrameCount1 = (uint8_t)(testFrameSuccessCount >> 8);
-  pBuffer->ZW_PowerlevelTestNodeReportFrame.testFrameCount2 = (uint8_t)testFrameSuccessCount;
-}
-
-/**
- * @brief NOP
- * Comment function...
- * @param par description..
- * @return description..
- */
 void NOPV(uint8_t val)
 {
   ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(NULL);
   /*Check pTxBuf is free*/
   if (NON_NULL(pTxBuf))
   {
+    TRANSMIT_OPTIONS_TYPE sTxOptions;
+    /**
+     *  Build transmit options
+     */
+    sTxOptions.destNode = testSourceNodeID;
+    sTxOptions.txOptions = ZWAVE_PLUS_TX_OPTIONS;
+    sTxOptions.txSecOptions = 0;
+    sTxOptions.securityKey = SECURITY_KEY_NONE;
+
     pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmdClass = COMMAND_CLASS_NO_OPERATION;
     pTxBuf->ZW_PowerlevelTestNodeReportFrame.cmd = val;
-    /* Send Report - we do not care if it gets there or not - if needed report can be requested again */
-    if (FALSE == Transport_SendRequest(
-                                       testSourceNodeID,
-                                       pTxBuf,
-                                       2,
-                                       ZWAVE_PLUS_TX_OPTIONS,
-                                       ZCB_RequestJobStatus,
-                                       TRUE))
+
+    if (ZW_TX_IN_PROGRESS != ZW_SendDataEx((uint8_t *)pTxBuf,
+                                           2,
+                                           &sTxOptions,
+                                           NULL))
     {
       /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
       FreeRequestBuffer();
@@ -435,4 +443,3 @@ CommandClassPowerLevelIsInProgress(void)
 {
   return ((POWERLEVEL_TEST_NODE_REPORT_ZW_TEST_INPROGRESS == testState) ? TRUE : FALSE);
 }
-

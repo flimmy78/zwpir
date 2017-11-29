@@ -22,7 +22,7 @@
 #include <ZW_basis_api.h>
 #include <ZW_tx_mutex.h>
 #include <ZW_TransportLayer.h>
-
+#include <ZW_TransportMulticast.h>
 #include "config_app.h"
 #include <CommandClassBinarySwitch.h>
 #include <misc.h>
@@ -43,120 +43,82 @@
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
 
-/*==============================   handleCommandClassBinarySwitch  ============
-**
-**  Function:  handler for Binary Switch Info CC
-**
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-void
+received_frame_status_t
 handleCommandClassBinarySwitch(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-)
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength)
 {
+  UNUSED(cmdLength);
+
   switch (pCmd->ZW_Common.cmd)
   {
     case SWITCH_BINARY_GET:
+      if(FALSE == Check_not_legal_response_job(rxOpt))
       {
         ZW_APPLICATION_TX_BUFFER *pTxBuf = GetResponseBuffer();
         /*Check pTxBuf is free*/
-        if(NULL != pTxBuf)
+        if( NON_NULL( pTxBuf ) )
         {
+          TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+          RxToTxOptions(rxOpt, &pTxOptionsEx);
           pTxBuf->ZW_SwitchBinaryReportFrame.cmdClass = COMMAND_CLASS_SWITCH_BINARY;
           pTxBuf->ZW_SwitchBinaryReportFrame.cmd = SWITCH_BINARY_REPORT;
-          pTxBuf->ZW_SwitchBinaryReportFrame.value = handleAppltBinarySwitchGet();
-          if(FALSE == Transport_SendResponse(
-              sourceNode,
+          pTxBuf->ZW_SwitchBinaryReportFrame.value = handleAppltBinarySwitchGet(rxOpt->destNode.endpoint);
+
+          if(ZW_TX_IN_PROGRESS != Transport_SendResponseEP(
               (BYTE *)pTxBuf,
               sizeof(ZW_SWITCH_BINARY_REPORT_FRAME),
-              option,
+              pTxOptionsEx,
               ZCB_ResponseJobStatus))
           {
             /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
             FreeResponseBuffer();
           }
-        }
-        else
-        {
-          /*pTxBuf is occupied.. do nothing*/
+          return RECEIVED_FRAME_STATUS_SUCCESS;
         }
       }
+      return RECEIVED_FRAME_STATUS_FAIL;
       break;
 
     case SWITCH_BINARY_SET:
-      ZCB_CmdCBinarySwitchSupportSet(pCmd->ZW_SwitchBinarySetFrame.switchValue);
-      break;
-
-    default:
+      CommandClassBinarySwitchSupportSet(pCmd->ZW_SwitchBinarySetFrame.switchValue, rxOpt->destNode.endpoint );
+      return RECEIVED_FRAME_STATUS_SUCCESS;
       break;
   }
+  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
 }
 
-code const void (code * ZCB_CmdCBinarySwitchSupportSet_p)(BYTE txStatus) = &ZCB_CmdCBinarySwitchSupportSet;
-/*============================ ZCB_CmdClassBinarySwitchSupportSet ===========
-** Function description
-** Check value is correct for current class and call application Set function.
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-void
-ZCB_CmdCBinarySwitchSupportSet( BYTE val)
+void CommandClassBinarySwitchSupportSet(
+    BYTE val,
+    BYTE endpoint)
 {
   if (val == 0)
   {
-    handleApplBinarySwitchSet(CMD_CLASS_BIN_OFF);
+    handleApplBinarySwitchSet(CMD_CLASS_BIN_OFF,  endpoint );
   }
 
   else if ((val < 0x64) ||
            (val == 0xff))
   {
-    handleApplBinarySwitchSet(CMD_CLASS_BIN_ON);
+    handleApplBinarySwitchSet(CMD_CLASS_BIN_ON, endpoint );
   }
 }
 
-/*============================ CmdClassBinarySwitchReportSendUnsolicited ====
-** Function description
-** This function...
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-JOB_STATUS
-CmdClassBinarySwitchReportSendUnsolicited(
-  BYTE option,
-  BYTE dstNode,
+JOB_STATUS CmdClassBinarySwitchReportSendUnsolicited(
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
   CMD_CLASS_BIN_SW_VAL bValue,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE val))
+  VOID_CALLBACKFUNC(pCbFunc)(TRANSMISSION_RESULT * pTransmissionResult))
 {
+  CMD_CLASS_GRP cmdGrp = {COMMAND_CLASS_SWITCH_BINARY, SWITCH_BINARY_REPORT};
 
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(pCbFunc);
-  if(NULL == pTxBuf)
-  {
-    /*Ongoing job is active.. just stop current job*/
-    return JOB_STATUS_BUSY;
-  }
-
-  pTxBuf->ZW_BasicReportFrame.cmdClass = COMMAND_CLASS_SWITCH_BINARY;
-  pTxBuf->ZW_BasicReportFrame.cmd = SWITCH_BINARY_REPORT;
-  pTxBuf->ZW_BasicReportFrame.value =  bValue;
-
-  if(FALSE == Transport_SendRequest(
-      dstNode,
-      (BYTE *)pTxBuf,
-      sizeof(ZW_SWITCH_BINARY_REPORT_FRAME),
-      option,
-      ZCB_RequestJobStatus,
-      FALSE))
-  {
-    /*Job failed, free transmit-buffer pTxBuf by cleaing mutex */
-     FreeRequestBuffer();
-     return JOB_STATUS_BUSY;
-  }
-  return JOB_STATUS_SUCCESS;
+  return cc_engine_multicast_request(
+      pProfile,
+      sourceEndpoint,
+      &cmdGrp,
+      (uint8_t *)&bValue,
+      1,
+      TRUE,
+      pCbFunc);
 }

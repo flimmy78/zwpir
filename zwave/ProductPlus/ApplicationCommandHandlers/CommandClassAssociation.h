@@ -10,65 +10,72 @@
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+
 #include <ZW_typedefs.h>
-#include <ZW_sysdefs.h>
-#include <ZW_pindefs.h>
-#include <ZW_evaldefs.h>
 #include <ZW_classcmd.h>
+#include <ZW_TransportEndpoint.h>
+
+/****************************************************************************/
+/*                     EXPORTED TYPES and DEFINITIONS                       */
+/****************************************************************************/
 
 /**
  * Returns the version of this CC.
  */
 #define CommandClassAssociationVersionGet() ASSOCIATION_VERSION_V2
 
-/*==============================   handleCommandClassAssociation  ============
-**
-**  Function:  handler for Association CC
-**
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-extern void 
+/****************************************************************************/
+/*                              EXPORTED DATA                               */
+/****************************************************************************/
+
+// Nothing here.
+
+/****************************************************************************/
+/*                           EXPORTED FUNCTIONS                             */
+/****************************************************************************/
+
+/**
+ * @brief Handler for Command Class Association
+ * @param[in] rxOpt Receive options.
+ * @param[in] pCmd Payload from the received frame.
+ * @param[in] cmdLength Length of the given payload.
+ * @return receive frame status.
+ */
+received_frame_status_t
 handleCommandClassAssociation(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength                /* IN Number of command bytes including the command */
-);
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength);
 
-
-/*============================ GetLastActiveGroupId ===============================
-** Function description
-** Report the current active group.
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-extern BYTE 
+/**
+ * @brief Returns the latest used association group.
+ * @return Latest used association group.
+ */
+extern BYTE
 ApplicationGetLastActiveGroupId(void);
 
-
-/*============================ handleGetMaxNodesInGroup ====================
-** Function description
-** Return max nodes supported in a group.
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
+/**
+ * @brief Returns the maximum number of nodes that can be stored in a given association group for
+ * a given endpoint.
+ * @param[in] groupIden A given Group ID.
+ * @param[in] ep A given endpoint.
+ * @return The maximum number of nodes.
+ */
 extern BYTE
-handleGetMaxNodesInGroup(void);
+handleGetMaxNodesInGroup(
+    BYTE groupIden,
+    BYTE ep);
 
+/**
+ * @brief Handler for Association Set command.
+ * @param[in] ep A given endpoint.
+ * @param[in] pCmd A command containing the nodes to save in the association database.
+ * @param[in] cmdLength Length of the command.
+ */
+extern void
+handleAssociationSet(
+    BYTE ep,
+    ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME* pCmd,
+    BYTE cmdLength);
 
-/*============================ CheckgroupIden ===============================
-** Function description
-** Check if grouidentifier is legal and change *pGroupIden to 1 if 
-** MAX_ASSOCIATION_GROUPS = 1.
-**
-** Side effects: 
-**
-**-------------------------------------------------------------------------*/
-extern BOOL
-handleCheckgroupIden(BYTE* pGroupIden);
-
-#endif
+#endif // _COMMAND_CLASS_ASSOCIATION_H_

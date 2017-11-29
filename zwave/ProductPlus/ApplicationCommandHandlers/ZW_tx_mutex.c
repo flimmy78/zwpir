@@ -1,24 +1,16 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2013
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Protected transmitbuffer used to send data.Use this module to get
-* a transmit buffer and release the buffer again when data is send and application
-* is notified with a callback. There are 2 types for buffers. one for unsoliceted
-* events (GetAppCmdFramePointer) and one response-buffer (GetResponseCmdFramePointer)
-* for responding a Get command with a Report.
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2013/06/06 10:40:19 $
-*
-****************************************************************************/
+/**
+ * @file ZW_tx_mutex.c
+ * @brief TX mutex
+ * @author Thomas Roll
+ * @author Christian Salmony Olsen
+ * @copyright Copyright (c) 2001-2016
+ * Sigma Designs, Inc.
+ * All Rights Reserved
+ * @details Protected transmit buffers used to send data. Use this module to get
+ * a transmit buffer and release the buffer again when data is sent and application
+ * is notified with a callback. There are 2 types for buffers: one for unsolicited
+ * commands and one for responses to incoming commands.
+ */
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
@@ -26,7 +18,9 @@
 #include <ZW_typedefs.h>
 #include <ZW_tx_mutex.h>
 #include <ZW_uart_api.h>
+#include <ZW_transport_api.h>
 #include <ZW_mem_api.h>
+#include <CommandClassSupervision.h>
 #include <misc.h>
 
 #ifdef ZW_DEBUG_MUTEX
@@ -46,43 +40,49 @@
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
+
 typedef struct _MUTEX
 {
   BYTE mutexAppActive;
   BYTE mutexResponseActive;
-  VOID_CALLBACKFUNC(pAppJob)(BYTE);
+  VOID_CALLBACKFUNC(pAppJob)(TRANSMISSION_RESULT * pTransmissionResult);
   VOID_CALLBACKFUNC(pResponseJob)(BYTE);
-  ZW_APPLICATION_TX_BUFFER appTxBuf;
+  REQ_BUF reqTxBuf;
   ZW_APPLICATION_TX_BUFFER responseTxBuf;
 } MUTEX;
 
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
-MUTEX myMutex = {FALSE, FALSE, NULL, NULL};
+
+static MUTEX myMutex;
+
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
+
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
-BOOL MutexSet(BYTE* pMutex );
-BOOL MutexActive(BYTE mutex );
-void MutexFree(BYTE* pMutex);
+static BOOL MutexSet(BYTE* pMutex);
+static void MutexFree(BYTE* pMutex);
 
-
-
-/**
- * @brief GetAppCmdFramePointer
- */
-ZW_APPLICATION_TX_BUFFER*
-GetRequestBuffer( VOID_CALLBACKFUNC(completedFunc)(BYTE) )
+void
+mutex_init(void)
 {
+  memset((BYTE *)&myMutex, 0x00, sizeof(myMutex));
+}
+
+ZW_APPLICATION_TX_BUFFER*
+GetRequestBuffer( VOID_CALLBACKFUNC(completedFunc)(TRANSMISSION_RESULT * pTransmissionResult) )
+{
+  ZW_DEBUG_MUTEX_SEND_NL();
    ZW_DEBUG_MUTEX_SEND_STR("GetRequestBuffer");
    ZW_DEBUG_MUTEX_SEND_NL();
   /*Set mutex*/
-  if(FALSE == MutexSet(&myMutex.mutexAppActive))
+  if(FALSE == MutexSet(&(myMutex.mutexAppActive)))
   {
     /*Mutex is not free.. stop current job*/
     ZW_DEBUG_MUTEX_SEND_STR("Mutex App not free!");
@@ -92,70 +92,88 @@ GetRequestBuffer( VOID_CALLBACKFUNC(completedFunc)(BYTE) )
   myMutex.pAppJob = completedFunc;
   ZW_DEBUG_MUTEX_SEND_STR("aMutexOn");
   ZW_DEBUG_MUTEX_SEND_NL();
-  memset(&myMutex.appTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER));
-
-  return &myMutex.appTxBuf;
+  CommandClassSupervisionGetAdd(&(myMutex.reqTxBuf.supervisionGet));
+  return &(myMutex.reqTxBuf.appTxBuf);
 }
 
-/**
- * @brief ZCB_RequestJobStatus
- */
-PCB(ZCB_RequestJobStatus)(BYTE txStatus)
+BOOL
+RequestBufferSetPayloadLength(ZW_APPLICATION_TX_BUFFER* pPayload,  BYTE payLoadlen)
 {
-  ZW_DEBUG_MUTEX_SEND_STR("ZCB_RequestJobStatus");
-  ZW_DEBUG_MUTEX_SEND_NL();
-  if( NULL != myMutex.pAppJob)
+  if(pPayload == &(myMutex.reqTxBuf.appTxBuf))
   {
-    myMutex.pAppJob(txStatus);
+    CommandClassSupervisionGetSetPayloadLength(&myMutex.reqTxBuf.supervisionGet, payLoadlen);
+    return TRUE;
   }
-  /*Free Mutex*/
-  FreeRequestBuffer();
+  return FALSE;
 }
 
+BOOL
+RequestBufferSupervisionPayloadActivate(
+    ZW_APPLICATION_TX_BUFFER** ppPayload,
+    BYTE* pPayLoadlen,
+    BOOL supervision)
+{
+  if(TRUE == myMutex.mutexAppActive)
+  {
+    /*Rewrite SV-cmd if CCmultichannel has written in payload*/
+    CommandClassSupervisionGetWrite(&(myMutex.reqTxBuf.supervisionGet));
+    *pPayLoadlen = CommandClassSupervisionGetGetPayloadLength(&(myMutex.reqTxBuf.supervisionGet));
+    if(TRUE == supervision)
+    {
+      *ppPayload = (ZW_APPLICATION_TX_BUFFER*)&(myMutex.reqTxBuf.supervisionGet);
+      *pPayLoadlen += sizeof(ZW_SUPERVISION_GET_FRAME);
+    }
+    else
+    {
+      *ppPayload = &(myMutex.reqTxBuf.appTxBuf);
+    }
+    return TRUE;
+  }
+  return FALSE;
+}
 
-/**
- * @brief FreeApplTransmitBuffer
- * Cancel job by clear mutex and remove callback.
- */
+PCB(ZCB_RequestJobStatus)(TRANSMISSION_RESULT * pTransmissionResult)
+{
+  ZW_DEBUG_MUTEX_SEND_NL();
+  ZW_DEBUG_MUTEX_SEND_STR("ZCB_RequestJobStatus");
+  if(NON_NULL( myMutex.pAppJob ))
+  {
+    myMutex.pAppJob(pTransmissionResult);
+  }
+
+  if (TRANSMISSION_RESULT_FINISHED == pTransmissionResult->isFinished)
+  {
+    ZW_DEBUG_MUTEX_SEND_STR(" _FREE!_");
+    FreeRequestBuffer();
+  }
+}
+
 void
 FreeRequestBuffer(void)
 {
-  ZW_DEBUG_MUTEX_SEND_STR("FreeRequestBuffer");
   ZW_DEBUG_MUTEX_SEND_NL();
+  ZW_DEBUG_MUTEX_SEND_STR("FreeRequestBuffer");
   /*Remove application func-callback. User should not be called any more*/
   myMutex.pAppJob = NULL;
   /*Free Mutex*/
-  MutexFree(&myMutex.mutexAppActive);
+  MutexFree(&(myMutex.mutexAppActive));
 }
 
-
-
-
-/**
- * @brief GetResponseBuffer
- */
 ZW_APPLICATION_TX_BUFFER*
 GetResponseBuffer(void)
 {
   return GetResponseBufferCb(NULL);
 }
 
-
-/**
- * GetResponseBufferCb
- */
 ZW_APPLICATION_TX_BUFFER*
 GetResponseBufferCb(VOID_CALLBACKFUNC(completedFunc)(BYTE))
 {
    ZW_DEBUG_MUTEX_SEND_STR("GetResponseBufferCb ");
    ZW_DEBUG_MUTEX_SEND_NUM((BYTE)completedFunc);
    ZW_DEBUG_MUTEX_SEND_NL();
+
   /*Set mutex*/
-#ifdef SECURITY
-  if(FALSE == MutexSet(&myMutex.mutexAppActive))
-#else
-  if(FALSE == MutexSet(&myMutex.mutexResponseActive))
-#endif
+  if(FALSE == MutexSet(&(myMutex.mutexResponseActive)))
   {
     /*Mutex is not free.. stop current job*/
     ZW_DEBUG_MUTEX_SEND_STR("Mutex RES not free!");
@@ -165,13 +183,10 @@ GetResponseBufferCb(VOID_CALLBACKFUNC(completedFunc)(BYTE))
   myMutex.pResponseJob = completedFunc;
   ZW_DEBUG_MUTEX_SEND_STR("rMutexOn");
   ZW_DEBUG_MUTEX_SEND_NL();
-  memset(&myMutex.responseTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+  memset((BYTE*)&myMutex.responseTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
   return &myMutex.responseTxBuf;
 }
 
-/**
- * ZCB_ResponseJobStatus
- */
 PCB(ZCB_ResponseJobStatus)(BYTE txStatus)
 {
   VOID_CALLBACKFUNC(tmpfunc)(BYTE);
@@ -186,10 +201,6 @@ PCB(ZCB_ResponseJobStatus)(BYTE txStatus)
   }
 }
 
-/**
- * @brief FreeResponseBuffer
- * Cancel job by clear mutex and remove callback.
- */
 void
 FreeResponseBuffer(void)
 {
@@ -198,21 +209,15 @@ FreeResponseBuffer(void)
   /*Remove application func-callback. User should not be called any more*/
   myMutex.pResponseJob = NULL;
   /*Free Mutex*/
-#ifdef SECURITY
-  MutexFree(&myMutex.mutexAppActive);
-#else
   MutexFree(&myMutex.mutexResponseActive);
-#endif
 }
 
-
 /**
- * @brief MutexSet
- * Set mutex if it is not active
- * @param pMutex pointer to the mutex-flag that should be changed.
+ * @brief Set mutex if it is not active
+ * @param[in,out] pMutex pointer to the mutex-flag that should be changed.
  * @return TRUE if mutex was set else FALSE for mutex was not free.
  */
-BOOL
+static BOOL
 MutexSet(BYTE* pMutex)
 {
   if( FALSE == *pMutex)
@@ -225,22 +230,10 @@ MutexSet(BYTE* pMutex)
 
 /**
  * @brief MutexFree
- * Ask state on mutex
- * @param pMutex pointer to the mutex-flag that should be changed.
- * @return mutex state.
- */
-BOOL
-MutexActive(BYTE mutex )
-{
-  return mutex;
-}
-
-/**
- * @brief MutexFree
- * @param pMutex pointer to the mutex-flag that should be changed.
+ * @param[out] pMutex pointer to the mutex-flag that should be changed.
  * Free mutex
  */
-void
+static void
 MutexFree(BYTE* pMutex)
 {
   ZW_DEBUG_MUTEX_SEND_STR("MutexFree ");
@@ -249,20 +242,12 @@ MutexFree(BYTE* pMutex)
   *pMutex = FALSE;
 }
 
-
-
-/**
- * @brief ActiveJobs
- * Af is mutex has active jobs by chekking if transmitbuffers are occupied.
- * @return TRUE if on orm ore jobs are active else FALSE.
- */
-BOOL ActiveJobs(void)
+BOOL
+ActiveJobs(void)
 {
   if((TRUE == myMutex.mutexAppActive) || (TRUE == myMutex.mutexResponseActive))
   {
     return TRUE;
   }
   return FALSE;
-
 }
-

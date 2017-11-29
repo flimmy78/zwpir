@@ -28,18 +28,26 @@
  *
  * Author:   Henrik Holm
  *
- * Last Changed By:  $Author: efh $
- * Revision:         $Revision: 23619 $
- * Last Changed:     $Date: 2012-11-04 19:49:35 +0200 (Вс, 04 ноя 2012) $
+ * Last Changed By:  $$
+ * Revision:         $$
+ * Last Changed:     $$
  *
  ****************************************************************************/
+
+#include "config_app.h"
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+#ifdef ZW_CONTROLLER
+#include <ZW_controller_api.h>
+#else
 #include <ZW_slave_api.h>
+#endif
 #include <ZW_uart_api.h>
 #include <slave_learn.h>
+#include <ZW_TransportLayer.h>
+#include <misc.h>
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
@@ -64,29 +72,54 @@
 #define LEARN_MODE_CLASSIC_TIMEOUT      2   /* Timeout count for classic innlusion */
 #define LEARN_MODE_NWI_TIMEOUT          4  /* Timeout count for network wide innlusion */
 
-static BYTE learnStateHandle = 0xFF;
-static BYTE bInclusionTimeoutCount;
-static BYTE bIncReqCount;
-static BYTE bIncReqCountSave = 4;
-
-static BOOL nodeInfoTransmitDone  = TRUE;
 
 #define STATE_LEARN_IDLE     0
 #define STATE_LEARN_STOP     1
 #define STATE_LEARN_CLASSIC  2
 #define STATE_LEARN_NWI      3
+
+
+typedef enum { NW_NONE, NW_INCLUSION, NW_EXCLUSION} NW_ACTION;
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
-BYTE learnState = STATE_LEARN_IDLE;   /*Application can use this flag to check if learn mode is active*/
+static BYTE learnStateHandle = 0xFF;
+static BYTE bInclusionTimeoutCount;
+static BYTE bIncReqCount;
+static BYTE bIncReqCountSave = 4;
 
-void HandleLearnState(void);
+#ifdef NOT_USED
+/* Function pointer to WakeUpSet function so this module can work
+   with both battery and non-battery products.
+   Is NULL in non-battery nodes. */
+static VOID_CALLBACKFUNC(pWakeUpStateSet)(BYTE) = NULL;
+#endif
+
+static BOOL nodeInfoTransmitDone  = TRUE;
+
+static BYTE learnState = STATE_LEARN_IDLE;   /*Application can use this flag to check if learn mode is active*/
+
+static NW_ACTION NW_Action = NW_NONE;
+
+/* Remember the nodeid after inclusion to pass it on when secure
+   inclusion finishes. Do NOT use for any other purpose.
+   Is only valid */
+static BYTE bCachedNodeID = 0xFF;
+
+
+static void HandleLearnState(void);
 void ZCB_LearnNodeStateTimeout(void);
+#ifdef ZW_CONTROLLER
+void ZCB_LearnModeCompleted(
+  LEARN_INFO* psLearnIfo);
+#else
 void ZCB_LearnModeCompleted(
   BYTE bStatus,         /* IN Current status of Learnmode*/
   BYTE nodeID);         /* IN resulting nodeID */
+#endif
 
-void ZCB_TransmitNodeInfoComplete( BYTE bTXStatus );
+void ZCB_TransmitNodeInfoComplete(BYTE bTXStatus, TX_STATUS_TYPE *txStatusReport);
+
 /****************************************************************************/
 /*                               PROTOTYPES                                 */
 /****************************************************************************/
@@ -96,6 +129,20 @@ void ZCB_TransmitNodeInfoComplete( BYTE bTXStatus );
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
 
+#ifdef ZW_CONTROLLER
+code const void (code * ZCB_LearnModeCompleted_p)(LEARN_INFO* psLearnInfo) = &ZCB_LearnModeCompleted;
+/*==========================   ZCB_LearnModeCompleted   ======================
+**    Function description
+**      Callback which is called on learnmode completes
+**
+**    Side effects:
+**
+**--------------------------------------------------------------------------*/
+void                  /*RET Nothing */
+ZCB_LearnModeCompleted(
+  LEARN_INFO* psLearnInfo)
+#else
+#ifdef NOT_USED
 code const void (code * ZCB_LearnModeCompleted_p)(BYTE bStatus, BYTE nodeID) = &ZCB_LearnModeCompleted;
 /*============================   LearnModeCompleted   ========================
 **    Function description
@@ -105,11 +152,16 @@ code const void (code * ZCB_LearnModeCompleted_p)(BYTE bStatus, BYTE nodeID) = &
 **
 **--------------------------------------------------------------------------*/
 void                  /*RET Nothing */
-ZCB_LearnModeCompleted(
+#endif
+PCB(ZCB_LearnModeCompleted)(
   BYTE bStatus,         /* IN Current status of Learnmode*/
-  BYTE nodeID           /* IN resulting nodeID */
-)
+  BYTE nodeID)          /* IN resulting nodeID */
+#endif
 {
+  ZW_DEBUG_LEARNPLUS_SEND_STR("\r\n**ZCB_LearnModeCompleted");
+  ZW_DEBUG_LEARNPLUS_SEND_NUM(bStatus);
+  ZW_DEBUG_LEARNPLUS_SEND_NUM(nodeID);
+  ZW_DEBUG_LEARNPLUS_SEND_NL();
   /* Learning in progress. Protocol will do timeout for us */
   if (learnStateHandle != 0xff)
   {
@@ -117,6 +169,12 @@ ZCB_LearnModeCompleted(
     learnStateHandle = 0xff;
   }
 
+#ifdef ZW_CONTROLLER
+#else
+  if (ASSIGN_NODEID_DONE == bStatus)
+  {
+    bCachedNodeID = nodeID;
+  }
   if (bStatus == ASSIGN_RANGE_INFO_UPDATE)
   {
     nodeInfoTransmitDone = FALSE;
@@ -135,10 +193,11 @@ ZCB_LearnModeCompleted(
     }
     LearnCompleted(nodeID);
   }
-
+#endif
 }
 
-code const void (code * ZCB_TransmitNodeInfoComplete_p)(BYTE bTXStatus) = &ZCB_TransmitNodeInfoComplete;
+#ifdef NOT_USED
+code const void (code * ZCB_TransmitNodeInfoComplete_p)(BYTE bTXStatus, TX_STATUS_TYPE *) = &ZCB_TransmitNodeInfoComplete;
 /*========================   TransmitNodeInfoComplete   ======================
 **    Function description
 **      Callbackfunction called when the nodeinformation frame has
@@ -148,14 +207,18 @@ code const void (code * ZCB_TransmitNodeInfoComplete_p)(BYTE bTXStatus) = &ZCB_T
 **
 **--------------------------------------------------------------------------*/
 void
-ZCB_TransmitNodeInfoComplete(
-  BYTE bTXStatus
+#endif
+PCB(ZCB_TransmitNodeInfoComplete)(
+  BYTE bTXStatus,
+  TX_STATUS_TYPE *txStatusReport
 )
 {
+  UNUSED(bTXStatus);
+  UNUSED(txStatusReport);
   nodeInfoTransmitDone = TRUE;
 }
 
-
+#ifdef NOT_USED
 code const void (code * ZCB_LearnNodeStateTimeout_p)(void) = &ZCB_LearnNodeStateTimeout;
 /*============================   EndLearnNodeState   ========================
 **    Function description
@@ -166,10 +229,20 @@ code const void (code * ZCB_LearnNodeStateTimeout_p)(void) = &ZCB_LearnNodeState
 **
 **--------------------------------------------------------------------------*/
 void
-ZCB_LearnNodeStateTimeout(void)
+#endif
+PCB(ZCB_LearnNodeStateTimeout)(void)
 {
+
   if (!(--bInclusionTimeoutCount))
   {
+    ZW_DEBUG_LEARNPLUS_SEND_NL();
+    ZW_DEBUG_LEARNPLUS_SEND_STR("ZCB_LearnNodeStateTimeout learnStateHandle");
+    ZW_DEBUG_LEARNPLUS_SEND_NUM(learnStateHandle);
+    ZW_DEBUG_LEARNPLUS_SEND_STR(" learnState ");
+    ZW_DEBUG_LEARNPLUS_SEND_NUM(learnState);
+    ZW_DEBUG_LEARNPLUS_SEND_STR(" NW_Action ");
+    ZW_DEBUG_LEARNPLUS_SEND_NUM(NW_Action);
+    ZW_DEBUG_LEARNPLUS_SEND_NL();
     if (learnStateHandle != 0xff)
     {
       TimerCancel(learnStateHandle);
@@ -186,7 +259,15 @@ ZCB_LearnNodeStateTimeout(void)
       ZW_DEBUG_LEARNPLUS_SEND_BYTE('R');
       if (bIncReqCount)
       {
-        ZW_ExploreRequestInclusion();
+        if(NW_Action == NW_INCLUSION)
+        {
+          ZW_ExploreRequestInclusion();
+        }
+        else if(NW_Action == NW_EXCLUSION)
+        {
+          ZW_ExploreRequestExclusion();
+        }
+
         bIncReqCount--;
 
       /* Start timer sending  out a explore inclusion request after 4 + random sec */
@@ -207,6 +288,7 @@ ZCB_LearnNodeStateTimeout(void)
   }
 }
 
+
 /*============================   StartLearnInternal   ======================
 **    Function description
 **      Call this function from the application whenever learnmode
@@ -222,6 +304,12 @@ ZCB_LearnNodeStateTimeout(void)
 static void
 HandleLearnState(void)
 {
+  ZW_DEBUG_LEARNPLUS_SEND_NL();
+  ZW_DEBUG_LEARNPLUS_SEND_STR("HandleLearnState learnState ");
+  ZW_DEBUG_LEARNPLUS_SEND_NUM(learnState);
+  ZW_DEBUG_LEARNPLUS_SEND_STR(" bInclusionTimeoutCount ");
+  ZW_DEBUG_LEARNPLUS_SEND_NUM(bInclusionTimeoutCount);
+  ZW_DEBUG_LEARNPLUS_SEND_NL();
   if (learnState == STATE_LEARN_CLASSIC)
   {
     ZW_SetLearnMode(ZW_SET_LEARN_MODE_CLASSIC, ZCB_LearnModeCompleted);
@@ -238,10 +326,18 @@ HandleLearnState(void)
   }
   else if (learnState == STATE_LEARN_NWI)
   {
-    ZW_SetLearnMode(ZW_SET_LEARN_MODE_NWI, ZCB_LearnModeCompleted);
-    bInclusionTimeoutCount = 1;
-    ZCB_LearnNodeStateTimeout();
-
+    if(NW_EXCLUSION == NW_Action)
+    {
+      ZW_SetLearnMode(ZW_SET_LEARN_MODE_NWE, ZCB_LearnModeCompleted);
+      bInclusionTimeoutCount = 1;
+      ZCB_LearnNodeStateTimeout();
+    }
+    else
+    {
+      ZW_SetLearnMode(ZW_SET_LEARN_MODE_NWI, ZCB_LearnModeCompleted);
+      bInclusionTimeoutCount = 1;
+      ZCB_LearnNodeStateTimeout();
+    }
   }
   else if (learnState == STATE_LEARN_STOP)
   {
@@ -260,79 +356,48 @@ HandleLearnState(void)
 /****************************************************************************/
 /*                           EXPORTED FUNCTIONS                             */
 /****************************************************************************/
-/*============================   StartLearnModeNow   ======================
-**    Function description
-**      Call this function from the application whenever learnmode
-**      should be enabled / Disabled.
-**      This function do the following:
-**        If the node is not included in network
-**          Set the Slave in classic Learnmode
-**          Starts a two seconds timeout after which we switch to NWI mode
-**          Broadcast the NODEINFORMATION frame once when called.
-**          If classic learn mode timeout start NWI learn mode
-**          if bInclusionReqCount > 1 send explorer inclusion frame
-**            start a 4 + random time timer
-**          if bInclusionReqCount == 1 send explorer inclusion request frame and wait 4 seconds
-**          when timer timeout and bInclusionReqCount == 0 disable NWI mode and call LearnCompleted
-**        if node is not included in a network
-**          Set the Slave in classic Learnmode
-**          Starts a two seconds timeout after which we stop learn mode
-**
-**       LearnCompleted will be also called after the end of learn process or a timeout
-**        if LearnComplete called due timeout out the bNodeID parameter would be 0xFF
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
+
 void
-StartLearnModeNow(BYTE bMode) /* The mode of the learn process
-                                 LEARN_MODE_INCLUSION   Enable the learn mode to do an inclusion
-                                 LEARN_MODE_EXCLUSION   Enable the learn mode to do an exclusion
-                                 LEARN_MODE_DISABLE      Disable learn mode
-                                */
+StartLearnModeNow(LEARN_MODE_ACTION bMode)
 {
-  if (bMode)
+
+  if (LEARN_MODE_DISABLE != bMode)
   {
+#ifdef NOT_USED
+    /* Stay awake until inclusion (and security and wakeup configuraion) is complete */
+    if (NON_NULL( pWakeUpStateSet ))
+    {
+      pWakeUpStateSet(TRUE);
+    }
+#endif
+
+    NW_Action = NW_NONE;
     if (learnState != STATE_LEARN_IDLE) /* Learn mode is started, stop it */
     {
       learnState = STATE_LEARN_STOP;
       HandleLearnState();
     }
     if (bMode == LEARN_MODE_INCLUSION)
+    {
       bIncReqCount = bIncReqCountSave;
+      NW_Action = NW_INCLUSION;
+    }
+    else if(LEARN_MODE_EXCLUSION_NWE == bMode)
+    {
+      bIncReqCount = bIncReqCountSave;
+      NW_Action = NW_EXCLUSION;
+    }
     else
+    {
       bIncReqCount = 0;
+    }
     learnState = STATE_LEARN_CLASSIC;
     HandleLearnState();
   }
   else
   {
+    NW_Action = NW_NONE;
     learnState = STATE_LEARN_STOP;
     HandleLearnState();
   }
 }
-
-
-/*===========================   SetInclusionRequestCount   =======================
-**    Function description
-**      Set the number of timer we send the explorer inclusion request frame
-**
-**    Side effects: None
-**
-**--------------------------------------------------------------------------------*/
-void SetInclusionRequestCount(BYTE bInclusionRequestCount)
-{
-  bIncReqCountSave = bInclusionRequestCount;
-}
-
-/*===========================   GetLearnModeState   =======================
-**    Function description
-**      Check if the learning mode is active
-**
-** Side effects: None
-**--------------------------------------------------------------------------------*/
-BOOL                    /*RET TRUE if the learning mode is active, else FALSE*/
-GetLearnModeState(void)
-{
-  return (learnState != STATE_LEARN_IDLE);
-}
-

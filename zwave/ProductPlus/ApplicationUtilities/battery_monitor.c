@@ -40,6 +40,7 @@
 #include <ZW_uart_api.h>
 #include <CommandClassBattery.h>
 #include "misc.h"
+#include <ZW_basis_api.h>
 
 
 /****************************************************************************/
@@ -89,12 +90,15 @@ typedef enum _EV_CHECK_BATT_
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
+BATT_LEVEL m_battLevel;
 
 
 /****************************************************************************/
 /*                           PRIVATE FUNCTIONS                             */
 /****************************************************************************/
+#ifdef NOT_USED
 void ZCB_BattReportSentDone(BYTE txStatus);
+#endif
 BOOL BatteryMonitorStateMan(EV_BATT ev_batt);
 
 /*==============================   initBatterySensor   ============================
@@ -110,8 +114,8 @@ void initBatterySensor()
   /*initalise the the adc in battery monitor mode, note that the reference , and input are ignored in the battery monitor mode*/
   /*The adc can be initaised any where in the application but in this sample it done in here this we will only use */
   /*in battery monitor mode*/
-  ZW_ADC_init(ADC_SINGLE_MODE, ADC_REF_U_VDD, ADC_REF_L_VSS, 0);
-  ZW_ADC_init(ADC_BATT_MON_MODE, 0, 0, 0);
+  ZW_ADC_init(ADC_IO_SINGLE_MODE, ADC_REF_U_VDD, ADC_REF_L_VSS, 0);
+  ZW_ADC_init(ADC_BATT_MULTI_MODE, 0, 0, 0);
   ZW_ADC_resolution_set(ADC_8_BIT); /*we use 8 bit resolution since it faster and use less code space*/
 }
 
@@ -234,7 +238,7 @@ BatterySensorRead(BATT_LEVEL *battLvl )
     /* Reset flag because state is changed*/
     lowBattReportOnceAwake = FALSE;
 
-    SetLowBattReport(FALSE);
+    ActivateBattNotificationTrigger();
   }
   return stateChange;
 }
@@ -243,67 +247,70 @@ BatterySensorRead(BATT_LEVEL *battLvl )
 /*============================ TimeToSendBattReport ===============================
 ** Function description check if the battery level is low and send battery level report
 **
-**  txOption the RF tx option to use when sending battery level report
-**  completedFunc callback function used to give the status of the transmition
-**  process
-**
-** Return TRUE if battery report should be send, FALSE if battery level report
-**        should not be send
-**
-** Side effects:
-**
 **-------------------------------------------------------------------------*/
 BOOL
-TimeToSendBattReport(BYTE txOption,
-                    VOID_CALLBACKFUNC(completedFunc)(BYTE) )
+TimeToSendBattReport(void)
 {
-  BYTE battLevel;
 
-  ZW_DEBUG_BATT_MON_SEND_STR("TimeToSendBattReport");
+  ZW_DEBUG_BATT_MON_SEND_STR("\r\nTimeToSendBattReport");
   ZW_DEBUG_BATT_MON_SEND_NL();
-
-  BatterySensorRead(&battLevel);
+  BatterySensorRead(&m_battLevel);
   /*we send the report frame only one time on every wakeup
     and when no ACK received from CSC node for a prevouis report frame
     and the batt level is low*/
   if (!lowBattReportAcked && !lowBattReportOnceAwake)
   {
-
-    ZW_DEBUG_BATT_MON_SEND_STR("+ SEND REPORT level ");
-    ZW_DEBUG_BATT_MON_SEND_NUM(battLevel);
-    ZW_DEBUG_BATT_MON_SEND_NL();
-
-    if(0xFF != AssociationGetLifeLineNodeID())
-    {
-      if (JOB_STATUS_SUCCESS ==CmdClassBatteryReport(
-                                 txOption,
-                                 AssociationGetLifeLineNodeID(),
-                                 battLevel,
-                                 completedFunc))
-      {
-        lowBattReportAcked = TRUE;
-        lowBattReportOnceAwake = TRUE;
-        return TRUE;
-      }
-    }
+    return TRUE;
   }
-  ZW_DEBUG_BATT_MON_SEND_STR(" level ");
-  ZW_DEBUG_BATT_MON_SEND_NUM(battLevel);
-  ZW_DEBUG_BATT_MON_SEND_NL();
   return FALSE;
 }
 
+/*============================ SendBattReport ===============================
+**-------------------------------------------------------------------------*/
+JOB_STATUS
+SendBattReport(VOID_CALLBACKFUNC(completedFunc)(TRANSMISSION_RESULT * pTransmissionResult) )
+{
+  AGI_PROFILE lifelineProfile = {
+      ASSOCIATION_GROUP_INFO_REPORT_PROFILE_GENERAL_NA_V2,
+      ASSOCIATION_GROUP_INFO_REPORT_PROFILE_GENERAL_LIFELINE
+  };
+  JOB_STATUS status;
+
+  ZW_DEBUG_BATT_MON_SEND_STR("\r\nSendBattReport");
+  ZW_DEBUG_BATT_MON_SEND_NL();
+
+  /*we send the report frame only one time on every wakeup
+    and when no ACK received from CSC node for a prevouis report frame
+    and the batt level is low*/
+  status= CmdClassBatteryReport(
+                             &lifelineProfile,
+                             ENDPOINT_ROOT,
+                             m_battLevel,
+                             completedFunc);
+  if(JOB_STATUS_SUCCESS == status)
+  {
+    ZW_DEBUG_BATT_MON_SEND_NL();
+    ZW_DEBUG_BATT_MON_SEND_BYTE('s');
+    lowBattReportAcked = TRUE;
+  }
+  /* We have tried to send battery report. set flag */
+  lowBattReportOnceAwake = TRUE;
+  ZW_DEBUG_BATT_MON_SEND_STR(" level ");
+  ZW_DEBUG_BATT_MON_SEND_NUM(m_battLevel);
+  ZW_DEBUG_BATT_MON_SEND_NL();
+  return status;
+}
 /*============================ SetLowBattReport ===============================
 ** Function description
-** Set status if Lowbatt reoprt should be active og deactive. FALSE is deactive
+** Set status if Lowbatt report should be active og deactive. FALSE is deactive
 **
 ** Side effects:
 **
 **-------------------------------------------------------------------------*/
 void
-SetLowBattReport(BOOL status)
+ActivateBattNotificationTrigger(void)
 {
-  lowBattReportAcked = status;
+  lowBattReportAcked = FALSE;
 }
 /*============================ InitBatteryMonitor ===============================
 ** Function description
@@ -320,8 +327,7 @@ InitBatteryMonitor(BYTE wakeUpReason)
   /*Init application battery HW*/
   initBatterySensor();
 
-  if (wakeUpReason == ZW_WAKEUP_RESET || wakeUpReason == ZW_WAKEUP_POR 
-      || wakeUpReason == ZW_WAKEUP_WATCHDOG)
+  if (wakeUpReason == ZW_WAKEUP_RESET || wakeUpReason == ZW_WAKEUP_POR)
   {
     ZW_DEBUG_BATT_MON_SEND_STR("IBattMon RES! ");
     ZW_DEBUG_BATT_MON_SEND_NUM(wakeUpReason);

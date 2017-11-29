@@ -1,12 +1,12 @@
-/****************************************************************************
+/**
  *
- * Copyright (c) 2001-2011
+ * Copyright (c) 2001-2014
  * Sigma Designs, Inc.
  * All Rights Reserved
  *
- *---------------------------------------------------------------------------
+ * @file ApplicationCommandHandlers\config_app.h
  *
- * Description: This header file contains defines for application version
+ * @brief This header file contains defines for application version
  *  in a generalized way.
  *
  *  Don't change the name of the file, and son't change the names of
@@ -14,18 +14,26 @@
  *  the release procedure. The version information will be set automatically
  *  by the "make_release.bat"-script.
  *
- * Author:   Erik Friis Harck
+ * Author: Erik Friis Harck
  *
- * Last Changed By:  $Author: efh $
- * Revision:         $Revision: 11456 $
- * Last Changed:     $Date: 2008-09-25 16:29:18 +0200 (Thu, 25 Sep 2008) $
+ * Last Changed By: $Author: tro $
+ * Revision: $Revision: 0.00 $
+ * Last Changed: $Date: 2014/12/09 14:28:21 $
  *
- ****************************************************************************/
+ */
+
 #ifndef _CONFIG_APP_H_
 #define _CONFIG_APP_H_
 
+/**
+ * Major version number of the Application Command Handler group.
+ */
 #define APP_VERSION 2
-#define APP_REVISION 0
+
+/**
+ * Minor version number of the Application Command Handler group.
+ */
+#define APP_REVISION 13
 
 #endif /* _CONFIG_APP_H_ */
 

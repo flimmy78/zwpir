@@ -11,8 +11,8 @@
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
 #include <ZW_typedefs.h>
-#include <ZW_tx_mutex.h>
-
+#include <CommandClass.h>
+#include <agi.h>
 /****************************************************************************/
 /*                     EXPORTED TYPES and DEFINITIONS                       */
 /****************************************************************************/
@@ -23,7 +23,7 @@
 #define CommandClassDoorLockVersionGet() DOOR_LOCK_VERSION_V2
 
 /**
- * Door Lock Mode (8 bit) will set the door lock device in unsecured or 
+ * Door Lock Mode (8 bit) will set the door lock device in unsecured or
  * secured mode as well as other peripheral settings.
  *
  * 1) Constant mode. Door will be unsecured until set back to secured mode by Command.
@@ -45,8 +45,8 @@ typedef enum
 
 /**
  * Operation mode (1byte).
- * The Operation Type field can be set to either constant or timed operation. When 
- * timed operation is set, the Lock Timer Minutes and Lock Timer Seconds fields 
+ * The Operation Type field can be set to either constant or timed operation. When
+ * timed operation is set, the Lock Timer Minutes and Lock Timer Seconds fields
  * MUST be set to valid values.
  */
 typedef enum
@@ -63,7 +63,7 @@ typedef enum
  * -----------------------------------------
  *
  * Inside/outside Door Handles Mode (4 bits).
- * These parameters indicate the activity of the door handles i.e. which 
+ * These parameters indicate the activity of the door handles i.e. which
  * handle(s) has opened the door lock.
  * Bit| Outside Door Handles Mode (4 bits)         | Inside Door Handles Mode (4 bits)
  * ---|--------------------------------------------|-------------------------------------------
@@ -73,7 +73,7 @@ typedef enum
  * 3  | 0 = Handle 4 inactive; 1 = Handle 4 active | 0 = Handle 4 inactive; 1 = Handle 4 active
  *
  * Door condition (8 bits).
- * The Door Condition field indicates the hardware status of the door lock 
+ * The Door Condition field indicates the hardware status of the door lock
  * device such as bolt and latch states.
  * Bit| Description
  *----|-----------------------------------
@@ -97,10 +97,10 @@ typedef struct _CMD_CLASS_DOOR_LOCK_OPERATION_REPORT
  * -----------------------------------
  *
  * Inside/outside Door Handles State (4 bits).
- * The Door Handles field is to enable or disable the door handlers that are implemented in the 
- * door lock device. For example there could be an inside as well as an outside door handler, 
- * whereas the inside door handler can be handled by Z-Wave Commands and the outside door 
- * handler will only unlock the door when successful authentication has been verified by e.g. 
+ * The Door Handles field is to enable or disable the door handlers that are implemented in the
+ * door lock device. For example there could be an inside as well as an outside door handler,
+ * whereas the inside door handler can be handled by Z-Wave Commands and the outside door
+ * handler will only unlock the door when successful authentication has been verified by e.g.
  * a keypad.
  * Bit| Outside Door Handles State (4 bits)         | Inside Door Handles State (4 bits)
  * ---|--------------------------------------------|-------------------------------------------
@@ -123,7 +123,7 @@ typedef struct _CMD_CLASS_DOOR_LOCK_CONFIGURATION
  * -----------------------------------
  *
  * Inside/outside Door Handles Mode (4 bits).
- * These parameters indicate the activity of the door handles i.e. which 
+ * These parameters indicate the activity of the door handles i.e. which
  * handle(s) has opened the door lock.
  * Bit| Outside Door Handles Mode (4 bits)         | Inside Door Handles Mode (4 bits)
  * ---|--------------------------------------------|-------------------------------------------
@@ -133,10 +133,10 @@ typedef struct _CMD_CLASS_DOOR_LOCK_CONFIGURATION
  * 3  | 0 = Handle 4 inactive; 1 = Handle 4 active | 0 = Handle 4 inactive; 1 = Handle 4 active
  *
  * Inside/outside Door Handles State (4 bits).
- * The Door Handles field is to enable or disable the door handlers that are implemented in the 
- * door lock device. For example there could be an inside as well as an outside door handler, 
- * whereas the inside door handler can be handled by Z-Wave Commands and the outside door 
- * handler will only unlock the door when successful authentication has been verified by e.g. 
+ * The Door Handles field is to enable or disable the door handlers that are implemented in the
+ * door lock device. For example there could be an inside as well as an outside door handler,
+ * whereas the inside door handler can be handled by Z-Wave Commands and the outside door
+ * handler will only unlock the door when successful authentication has been verified by e.g.
  * a keypad.
  * Bit| Outside Door Handles State (4 bits)         | Inside Door Handles State (4 bits)
  * ---|--------------------------------------------|-------------------------------------------
@@ -146,7 +146,7 @@ typedef struct _CMD_CLASS_DOOR_LOCK_CONFIGURATION
  * 3  | 0 = Handle 4 inactive; 1 = Handle 4 active | 0 = Handle 4 inactive; 1 = Handle 4 active
  *
  * Door condition (8 bits).
- * The Door Condition field indicates the hardware status of the door lock 
+ * The Door Condition field indicates the hardware status of the door lock
  * device such as bolt and latch states.
  * Bit| Description
  *----|-----------------------------------
@@ -184,77 +184,71 @@ typedef struct _CMD_CLASS_DOOR_LOCK_DATA
 
 
 
-/** 
+/**
  * @brief handleCommandClassDoorLock
- * @param option IN Frame header info.
- * @param sourceNode IN Command sender Node ID.
- * @param pCmd IN Payload from the received frame, the union should be used to access 
- * the fields.
- * @param cmdLength IN Number of command bytes including the command.
- * @return none.
+ * Handler for command class Doorlock
+ * @param[in] rxOpt receive options of type RECEIVE_OPTIONS_TYPE_EX
+ * @param[in] pCmd Payload from the received frame
+ * @param[in] cmdLength Number of command bytes including the command
+ * @return receive frame status.
  */
-void
-handleCommandClassDoorLock(
-  BYTE  option,                 /* IN Frame header info */
-  BYTE  sourceNode,               /* IN Command sender Node ID */
-  ZW_APPLICATION_TX_BUFFER *pCmd, /* IN Payload from the received frame, the union */
-  /*    should be used to access the fields */
-  BYTE   cmdLength);                /* IN Number of command bytes including the command */
+received_frame_status_t handleCommandClassDoorLock(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  BYTE cmdLength);
 
 
 
-/** 
+/**
  * @brief handleCommandClassDoorLockOperationSet
  * Comment function...
- * @param mode door lock operation modes.
+ * @param[in] mode door lock operation modes.
  * @return none
  */
-extern void 
-handleCommandClassDoorLockOperationSet(DOOR_MODE mode);
+extern void handleCommandClassDoorLockOperationSet( DOOR_MODE mode);
 
 
-/** 
+/**
  * @brief handleCommandClassDoorLockOperationReport
  * Comment function...
- * @param pData Out data pointer of type CMD_CLASS_DOOR_LOCK_OPERATION_REPORT.
+ * @param[out] pData data pointer of type CMD_CLASS_DOOR_LOCK_OPERATION_REPORT.
  * @return none
  */
-extern void 
-handleCommandClassDoorLockOperationReport(CMD_CLASS_DOOR_LOCK_OPERATION_REPORT* pData);
+extern void handleCommandClassDoorLockOperationReport(
+  CMD_CLASS_DOOR_LOCK_OPERATION_REPORT* pData);
 
-/** 
+/**
  * @brief handleCommandClassDoorLockOperationSet
  * Comment function...
- * @param pData In data pointer of type CMD_CLASS_DOOR_LOCK_CONFIGURATION.
+ * @param[in] pData data pointer of type CMD_CLASS_DOOR_LOCK_CONFIGURATION.
  * @return none
  */
-extern void 
-handleCommandClassDoorLockConfigurationSet(CMD_CLASS_DOOR_LOCK_CONFIGURATION* pData);
+extern void handleCommandClassDoorLockConfigurationSet(
+  CMD_CLASS_DOOR_LOCK_CONFIGURATION* pData);
 
 
-/** 
+/**
  * @brief handleCommandClassDoorLockConfigurationReport
  * Comment function...
- * @param pData Out data pointer of type CMD_CLASS_DOOR_LOCK_OPERATION.
- * @return none
+ * @param[out] pData data pointer of type CMD_CLASS_DOOR_LOCK_OPERATION.
  */
-extern void 
-handleCommandClassDoorLockConfigurationReport(CMD_CLASS_DOOR_LOCK_CONFIGURATION* pData);
+extern void handleCommandClassDoorLockConfigurationReport(
+  CMD_CLASS_DOOR_LOCK_CONFIGURATION* pData);
 
 
-
-/** 
- * @brief CmdClassDoorLockOperationSupportReport
- * Send DoorLock operation report.
- * @param destNode destination node
- * @param pData pointer to Operation report
- * @param pCbFunc function pointer for status.
- * @return JOB_STATUS
+/**
+ * @brief Send DoorLock operation report.
+ * @param[in] pProfile pointer to AGI profile
+ * @param[in] sourceEndpoint source endpoint
+ * @param[in] pData Pointer to door lock data.
+ * @param[out] pCallback callback function pointer returning status destination node receive job.
+ * @return status on the job.
  */
 JOB_STATUS
 CmdClassDoorLockOperationSupportReport(
-  BYTE destNode, 
+  AGI_PROFILE* pProfile,
+  BYTE sourceEndpoint,
   CMD_CLASS_DOOR_LOCK_OPERATION_REPORT* pData,
-  VOID_CALLBACKFUNC(pCbFunc)(BYTE bStatus));
+  VOID_CALLBACKFUNC(pCallback)(TRANSMISSION_RESULT * pTransmissionResult));
 
 #endif /* _COMMANDCLASSDOORLOCK_H_ */

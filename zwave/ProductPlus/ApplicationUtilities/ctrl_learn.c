@@ -1,46 +1,33 @@
-/****************************************************************************
- *
- * Copyright (c) 2001-2013
- * Sigma Designs, Inc.
- * All Rights Reserved
- *
- *---------------------------------------------------------------------------
- *
- * Description: This file contains a sample of how learn mode could be implemented
- *              on ZW0201 standard controller.
- *              The module works for both battery operated and always listening
- *              devices.
- *
- * Author:   Henrik Holm
- *
- * Last Changed By:  $Author: efh $
- * Revision:         $Revision: 24920 $
- * Last Changed:     $Date: 2013-03-06 16:43:02 +0200 (Ср, 06 мар 2013) $
- *
- ****************************************************************************/
-
-
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+#include <ZW_typedefs.h>
 #include <ZW_controller_api.h>
 #include <ZW_uart_api.h>
 #include <ctrl_learn.h>
+#include <misc.h>
+#include <ZW_timer_api.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
-#define LEARN_MODE_CLASSIC_TIMEOUT        2   /* Timeout count for classic innlusion */
+#define LEARN_MODE_CLASSIC_TIMEOUT        2   /* Timeout count for classic inclusion */
 #ifdef AV_REMOTE
-#define LEARN_MODE_NWI_TIMEOUT          72 /* Timeout count for network wide innlusion is 3 minutes i a simple_AV_remote*/
+#define LEARN_MODE_NWI_TIMEOUT          72 /* Timeout count for network wide inclusion is 3 minutes i a simple_AV_remote*/
 #else
-#define LEARN_MODE_NWI_TIMEOUT          720 /* Timeout count for network wide innlusion */
+#define LEARN_MODE_NWI_TIMEOUT          720 /* Timeout count for network wide inclusion */
 #endif
 #define NWI_BASE_TIMEOUT                 50 /* Base delay for sending out inclusion req. */
 
-#define MAX_NWI_REQUEST_TIMEOUT          27 /* Max number of increments in inclusiob request timeout */
+#define MAX_NWI_REQUEST_TIMEOUT          27 /* Max number of increments in inclusion request timeout */
 
 #define ZW_LEARN_NODE_STATE_TIMEOUT 250     /* Learn mode base timeout  */
+
+typedef enum
+{
+  NW_INCLUSION,
+  NW_EXCLUSION
+} NW_OPERATION;
 
 BYTE learnStateHandle = 0xFF;
 BYTE bRequestTimeoutHandle = 0xFF;
@@ -51,6 +38,8 @@ BYTE bSavetRequestNWITimeout;
 
 BYTE bLearnStarted = FALSE;
 BYTE bLastLearnMode;
+
+NW_OPERATION bNWOperation = NW_INCLUSION;
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
@@ -63,13 +52,14 @@ void StartLearnInternal(BYTE bMode);
 /*                               PROTOTYPES                                 */
 /****************************************************************************/
 void StopLearnInternal();
+void ZCB_LearnModeCompleted( LEARN_INFO *glearnNodeInfo);
+void ZCB_EndLearnNodeState(void);
+void ZCB_SendExplorerRequest(void);
 
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
 
-
-code const void (code * ZCB_LearnModeCompleted_p)(LEARN_INFO *glearnNodeInfo) = &ZCB_LearnModeCompleted;
 /*============================   LearnModeCompleted   ========================
 **    Function description
 **      Callback which is called on learnmode completes
@@ -77,8 +67,7 @@ code const void (code * ZCB_LearnModeCompleted_p)(LEARN_INFO *glearnNodeInfo) = 
 **    Side effects:
 **
 **--------------------------------------------------------------------------*/
-void									/*RET	Nothing */
-ZCB_LearnModeCompleted(
+PCB(ZCB_LearnModeCompleted)(
   LEARN_INFO *glearnNodeInfo)					/* IN resulting nodeID */
 {
   register BYTE bStatus;
@@ -112,7 +101,7 @@ ZCB_LearnModeCompleted(
 
   	  if (bStatus == LEARN_MODE_DONE)
   	  {
-        LearnCompleted(glearnNodeInfo->bSource, TRUE);
+        LearnCompleted(glearnNodeInfo);
       }
       else
       {
@@ -123,8 +112,6 @@ ZCB_LearnModeCompleted(
   }
 }
 
-
-code const void (code * ZCB_EndLearnNodeState_p)(void) = &ZCB_EndLearnNodeState;
 /*============================   EndLearnNodeState   ========================
 **    Function description
 **      Timeout function that disables learnmode.
@@ -132,8 +119,7 @@ code const void (code * ZCB_EndLearnNodeState_p)(void) = &ZCB_EndLearnNodeState;
 **    Side effects:
 **
 **--------------------------------------------------------------------------*/
-void
-ZCB_EndLearnNodeState(void)
+PCB(ZCB_EndLearnNodeState)(void)
 {
   if (!(--wInclusionTimeoutCount))
   {
@@ -142,13 +128,12 @@ ZCB_EndLearnNodeState(void)
     if (!learnInProgress)
     {
       StopLearnInternal();
-      LearnCompleted(0, FALSE);
+      LearnCompleted(NULL);
     }
     return;
   }
 }
 
-code const void (code * ZCB_SendExplorerRequest_p)(void) = &ZCB_SendExplorerRequest;
 /*============================   SendExplorerRequest   ========================
 **    Function description
 **      Timeout function that sends out a explorer inclusion reuest
@@ -156,18 +141,26 @@ code const void (code * ZCB_SendExplorerRequest_p)(void) = &ZCB_SendExplorerRequ
 **    Side effects:
 **
 **--------------------------------------------------------------------------*/
-void
-ZCB_SendExplorerRequest(void)
+PCB(ZCB_SendExplorerRequest)(void)
 {
   if (!(--bRequestNWITimeoutCount))
   {
     ZW_DEBUG_SEND_BYTE('R');
 
-    ZW_ExploreRequestInclusion();
+    if (NW_INCLUSION == bNWOperation)
+    {
+      ZW_ExploreRequestInclusion();
+    }
+    else
+    {
+      ZW_ExploreRequestExclusion();
+    }
 
     /* Increase timeout if we havent reached max */
     if (bSavetRequestNWITimeout < MAX_NWI_REQUEST_TIMEOUT)
+    {
       bSavetRequestNWITimeout++;
+    }
 
     bRequestNWITimeoutCount = bSavetRequestNWITimeout;
   }
@@ -241,6 +234,8 @@ StartLearnInternal(
     }
     else
     {
+      /* Network wide operation */
+      bNWOperation = (bMode == ZW_SET_LEARN_MODE_NWI) ? NW_INCLUSION : NW_EXCLUSION;
       /*Disable Learn mode after 240 sec.*/
       wInclusionTimeoutCount = LEARN_MODE_NWI_TIMEOUT;
 
@@ -279,11 +274,14 @@ StartLearnInternal(
 **--------------------------------------------------------------------------*/
 void
 StartLearnModeNow(
-  BYTE bMode)
+  LEARN_MODE_ACTION bMode)
 {
+  BYTE tMode = ZW_SET_LEARN_MODE_DISABLE;
   /* If learn is in progress then just exit */
   if (learnInProgress)
+  {
     return;
+  }
 
   if (bLearnStarted) /* Learn mode is started, stop it */
   {
@@ -291,9 +289,27 @@ StartLearnModeNow(
   }
 
   /* Start Learn mode */
+  if (LEARN_MODE_DISABLE != bMode)
+  {
+    if (bMode == LEARN_MODE_INCLUSION)
+    {
+      tMode = ZW_SET_LEARN_MODE_NWI;
+    }
+    else if (LEARN_MODE_EXCLUSION_NWE == bMode)
+    {
+      tMode = ZW_SET_LEARN_MODE_NWE;
+    }
+    else
+    {
+      /* Classic LearnMode */
+      bMode = ZW_SET_LEARN_MODE_CLASSIC;
+    }
+  }
 
-  if (bMode)
-    StartLearnInternal(bMode);
+  if (tMode)
+  {
+    StartLearnInternal(tMode);
+  }
 }
 
 

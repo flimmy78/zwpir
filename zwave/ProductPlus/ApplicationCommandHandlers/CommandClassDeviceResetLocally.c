@@ -1,94 +1,79 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2011
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Device reset locally Command Class source file
-*
-* Author:
-*
-* Last Changed By:  $Author:  $
-* Revision:         $Revision:  $
-* Last Changed:     $Date:  $
-*
-****************************************************************************/
+/**
+ * @file
+ * Handler for Command Class Device Reset Locally.
+ * @copyright Copyright (c) 2001-2016, Sigma Designs Inc., All Rights Reserved
+ */
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
-#include <ZW_basis_api.h>
-#include <ZW_TransportLayer.h>
-#include <ZW_transport_api.h>
-#include <ZW_tx_mutex.h>
 
-#include "config_app.h"
-#include <CommandClassDeviceResetLocally.h>
-#include <ZW_slave_routing_api.h>
-#include <ZW_slave_api.h>
-
+#include <ZW_typedefs.h>
+#include <ZW_classcmd.h>
+#include <ZW_TransportEndpoint.h>
 #include <misc.h>
-#include <association_plus.h>
+#include <CommandClassDeviceResetLocally.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
 /****************************************************************************/
 
+// Nothing here.
+
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
+
+// Nothing here.
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
+
 /****************************************************************************/
-/*                            PRIVATE FUNCTIONS                             */
+/*                               FUNCTIONS                                  */
 /****************************************************************************/
 
-
-
-/*==============================   handleCommandClassDeviceResetLocally  ============
-**
-**  Function:  handler for Device Reset Locally CC
-**
-**  Side effects: None
-**
-**--------------------------------------------------------------------------*/
-void
-handleCommandClassDeviceResetLocally( VOID_CALLBACKFUNC(completedFunc)(BYTE))
+void CC_DeviceResetLocally_notification_tx(
+  agi_profile_t * pProfile,
+  VOID_CALLBACKFUNC(pCallback)(transmission_result_t * pTransmissionResult))
 {
-  BYTE dest;
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = GetRequestBuffer(completedFunc);
+  transmission_result_t transmissionResult;
+  transmissionResult.nodeId = 0;
+  transmissionResult.status = ZW_TX_FAILED;
+  transmissionResult.isFinished = TRANSMISSION_RESULT_FINISHED;
 
-  if(NULL == pTxBuf)
+  if(!GetMyNodeID())
   {
-    /*Ongoing job is active or GetMyNodeID is 0 .. just stop current cmdClass job and reset.*/
-    completedFunc(TRANSMIT_COMPLETE_FAIL);
-  }
-  else if(!GetMyNodeID())
-  {
-    /*Clear transmit-buffer mutex and inform application it was failing!*/
-    ZCB_RequestJobStatus(TRANSMIT_COMPLETE_FAIL);
+    /*
+     * The node is not included, and therefore it makes no sense to send
+     * anything. Finish by calling the callback function.
+     */
+
+    if (NON_NULL( pCallback ))
+    {
+      pCallback(&transmissionResult);
+    }
   }
   else
   {
-    dest = AssociationGetLifeLineNodeID();
-    pTxBuf->ZW_DeviceResetLocallyNotificationFrame.cmdClass = COMMAND_CLASS_DEVICE_RESET_LOCALLY;
-    pTxBuf->ZW_DeviceResetLocallyNotificationFrame.cmd = DEVICE_RESET_LOCALLY_NOTIFICATION;
+    cc_group_t cmdGrp = {COMMAND_CLASS_DEVICE_RESET_LOCALLY, DEVICE_RESET_LOCALLY_NOTIFICATION};
 
-    if(FALSE == Transport_SendRequest(
-      dest,
-      (BYTE *)pTxBuf,
-      sizeof(ZW_DEVICE_RESET_LOCALLY_NOTIFICATION_FRAME),
-      ZWAVE_PLUS_TX_OPTIONS,
-      ZCB_RequestJobStatus,
-      FALSE))
+    if(JOB_STATUS_SUCCESS != cc_engine_multicast_request(
+        pProfile,
+        ENDPOINT_ROOT,
+        &cmdGrp,
+        NULL,
+        0,
+        FALSE,
+        pCallback))
     {
-      /*Free transmit-buffer mutex and tell application it can reset.*/
-      ZCB_RequestJobStatus(TRANSMIT_COMPLETE_FAIL);
+      if (NON_NULL(pCallback))
+      {
+        pCallback(&transmissionResult);
+      }
     }
   }
 }

@@ -16,6 +16,7 @@
 /****************************************************************************/
 
 #include <ZW_typedefs.h>
+#include <ZW_stdint.h>
 #include <ZW_power_api.h>
 #include <eeprom.h>
 #include <battery_plus.h>
@@ -101,7 +102,7 @@ void PowerDownNow(void);
 void ZCB_ResetPowerDownTimeout(BYTE timeout);
 void ZCB_ClearSetPowerDownTimeout(BYTE timeout);
 
-DWORD
+uint32_t
 handleWakeUpIntervalGet(void)
 {
   return sleepPeriod;
@@ -186,7 +187,6 @@ PCB(ZCB_SetPowerDownTimeout)(BYTE timeout)
     ZW_DEBUG_BATT_SEND_NL();
     ZW_DEBUG_BATT_SEND_STR("New timeout val: ");
     ZW_DEBUG_BATT_SEND_NUM(timeout);
-    ZW_DEBUG_BATT_SEND_STR("\r\n");
     powerDownTicks = timeout;
   }
 }
@@ -292,15 +292,6 @@ PowerDownNow(void)
   ZW_DEBUG_BATT_SEND_NL();
 }
 
-
-
-/*============================   BatteryInit   ======================
-**    Updates the Wakeup count counter in EEPROM. If the counter
-**    reaches zero, a wakeup information frame is sent.
-**
-**    Side effects:
-**    Retrurn BOOL if it should wake up or not. TRUE = WakeUp.
-**--------------------------------------------------------------------------*/
 BOOL
 BatteryInit(
     BATT_MODE mode,
@@ -356,18 +347,19 @@ BatteryInit(
 
 #ifndef FLIRS
 void
-SetDefaultBatteryConfiguration(DWORD sleep)
+SetDefaultBatteryConfiguration(uint32_t sleep)
 {
   sleepPeriod = sleep;
   CalcStepTimeRestTime();
-  MemoryPutBuffer((WORD)&nvmApplDescriptor.EEOFFSET_SLEEP_PERIOD_far, &sleepPeriod, sizeof(DWORD), NULL);
+  //MemoryPutBuffer((WORD)&EEOFFSET_SLEEP_PERIOD_far, (BYTE_P)&sleepPeriod, sizeof(DWORD), NULL);
+  ZW_MemoryPutBuffer((WORD)&EEOFFSET_SLEEP_PERIOD_far, (BYTE_P)&sleepPeriod, sizeof(uint32_t));
   wakeupCount = sleepStepTime;
 }
 
 void
 LoadBatteryConfiguration(void)
 {
-  MemoryGetBuffer((WORD)&nvmApplDescriptor.EEOFFSET_SLEEP_PERIOD_far, &sleepPeriod, sizeof(DWORD));
+  MemoryGetBuffer((WORD)&EEOFFSET_SLEEP_PERIOD_far, (BYTE_P)&sleepPeriod, sizeof(DWORD));
   CalcStepTimeRestTime();
 }
 

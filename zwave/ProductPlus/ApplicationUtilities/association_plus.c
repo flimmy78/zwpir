@@ -1,41 +1,25 @@
-/***************************************************************************
-*
-* Copyright (c) 2001-2013
-* Sigma Designs, Inc.
-* All Rights Reserved
-*
-*---------------------------------------------------------------------------
-*
-* Description: Implements functions that make easy support to
-*              Association Command Class
-*
-* Author: Thomas Roll
-*
-* Last Changed By: $Author: tro $
-* Revision: $Revision: 0.00 $
-* Last Changed: $Date: 2013/06/21 10:15:17 $
-*
-****************************************************************************/
-
-/* EEPROM binary battery sensor node layout */
-/* Make sure compiler won't shuffle around with these variables,            */
-/* as there are external dependencies.                                      */
-/* All these variables needs to initialized, because the compiler groups    */
-/* the variables into different classes for uninitialized/initialized       */
-/* when ordering them. To keep them in order... Keep them all initialized.  */
-#pragma ORDER
+/**
+ * @file association_plus.c
+ * @brief Helper module for Command Class Association and Command Class Multi Channel Association.
+ * @author Thomas Roll
+ * @author Christian Salmony Olsen
+ * @copyright Copyright (c) 2001-2016
+ * Sigma Designs, Inc.
+ * All Rights Reserved
+ */
 
 /****************************************************************************/
 /*                              INCLUDE FILES                               */
 /****************************************************************************/
+
 #include <ZW_basis_api.h>
-#include <ZW_tx_mutex.h>
 #include <ZW_uart_api.h>
 #include <association_plus.h>
-#include <event_util.h>
 #include <ZW_TransportLayer.h>
 #include <CommandClassAssociation.h>
+#include <CommandClassAssociationGroupInfo.h>
 #include <eeprom.h>
+#include <ZW_classcmd.h>
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
@@ -55,115 +39,159 @@
 #define ZW_DEBUG_ASSOCIATION_SEND_NL()
 #endif
 
-
-
+typedef enum _NVM_ACTION_
+{
+  READ_DATA,
+  WRITE_DATA
+}
+NVM_ACTION;
 
 typedef struct _ASSOCIATION_GROUP_
 {
-  BYTE nodeID[MAX_ASSOCIATION_IN_GROUP];
-} ASSOCIATION_GROUP;
+  MULTICHAN_NODE_ID subGrp[MAX_ASSOCIATION_IN_GROUP];
+}
+ASSOCIATION_GROUP;
 
+typedef struct _ASSOCIATION_NODE_LIST_
+{
+  uint8_t * pNodeId; /*IN pointer to list of nodes*/
+  uint8_t noOfNodes;  /*IN number of nodes in List*/
+  MULTICHAN_DEST_NODE_ID * pMulChanNodeId; /*IN pointer to list of multi channel nodes*/
+  uint8_t noOfMulchanNodes;  /*IN number of  multi channel nodes in List*/
+}
+ASSOCIATION_NODE_LIST;
+
+#define MAGIC_VALUE (0x42)
+
+#define OFFSET_CLASSCMD                       0x00
+#define OFFSET_CMD                            0x01
+#define OFFSET_PARAM_1                        0x02
+#define OFFSET_PARAM_2                        0x03
+#define OFFSET_PARAM_3                        0x04
+#define OFFSET_PARAM_4                        0x05
 
 /****************************************************************************/
 /*                              PRIVATE DATA                                */
 /****************************************************************************/
+
 /* Default values */
-#define MAGIC_VALUE                 0x42
 
-
-ASSOCIATION_GROUP groups[MAX_ASSOCIATION_GROUPS];
+ASSOCIATION_GROUP groups[NUMBER_OF_ENDPOINTS + 1][MAX_ASSOCIATION_GROUPS];
 
 BYTE groupReportSourceNode;
 
 BYTE indx;
 
-
+ASSOCIATION_ROOT_GROUP_MAPPING* pGroupMappingTable = NULL;
+BYTE numberOfGroupMappingEntries = 0;
 
 /****************************************************************************/
 /*                              EXPORTED DATA                               */
 /****************************************************************************/
 
+// Nothing here.
+
 /****************************************************************************/
 /*                            PRIVATE FUNCTIONS                             */
 /****************************************************************************/
-/*======================= ReorderGroupAfterRemove  =======================
-** Function description
-** reorder the association group node ID list so there are no gaps
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
 
+static BOOL handleCheckgroupIden(BYTE* pGroupIden, BYTE ep);
+static void ExtractCmdClassNodeList(
+    ASSOCIATION_NODE_LIST* plist,
+    ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME* pCmd,
+    BYTE cmdLength,
+    BYTE* pMultiChannelAssociation);
+static BOOL AssGroupMappingLookUp(BYTE* pEndpoint, BYTE* pGroupID);
+static void AssociationEndpointClearAll(void);
+static void AssociationClearAll(void);
+static void AssociationStoreAll(void);
+static void NVM_Action(NVM_ACTION action);
+static void
+RemoveAssociationsFromGroup(
+    uint8_t cmdClass,
+    uint8_t ep,
+    uint8_t groupId,
+    ASSOCIATION_NODE_LIST * pListOfNodes);
+
+/**
+ * @brief Reorders nodes in a given group.
+ * @param groupIden Given group ID.
+ * @param ep Given endpoint.
+ * @param emptyIndx Location in index which must be filled up.
+ */
 static void
 ReorderGroupAfterRemove(
-  BYTE groupID,          /*the group ID to reorder*/
+  BYTE groupIden,      /*the group index to reorder*/
+  BYTE ep,             /* endpoint*/
   BYTE emptyIndx)      /*the index of the empty field*/
 {
   BYTE move;
-  
-  if (0 == groupID)
-  {
-    /* Lifeline group forced to 1 node, no reorder*/
-    return;
-  }
-  
+
   for(move = emptyIndx+1; move < MAX_ASSOCIATION_IN_GROUP; move++)
   {
-    groups[groupID].nodeID[move-1] = groups[groupID].nodeID[move];
-    groups[groupID].nodeID[move] = 0;
+    memcpy((BYTE*)&groups[ep][groupIden].subGrp[move-1], (BYTE*)&groups[ep][groupIden].subGrp[move], sizeof(MULTICHAN_NODE_ID));
+
+    // COLSEN FW TODO: Move this out of the loop since there's no point in clearing memory which will be overwritten right after?
+    memset((BYTE*)&groups[ep][groupIden].subGrp[move], 0, sizeof(MULTICHAN_NODE_ID));
   }
 }
 
-/*============================ handleAssociationGetnodeList =================
-** Function description
-** Deliver group number node list.
-** Return status on job: TRUE/FALSE
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-BOOL
+NODE_LIST_STATUS
 handleAssociationGetnodeList(
-  BYTE groupIden,             /* IN  Group Number*/
-  BYTE** ppNodeId,          /* OUT Doublepointer to list of nodes in group*/
-  BYTE* pNbrOfNodes)        /* OUT Number of nodes in group*/
+  BYTE groupIden,
+  BYTE ep,
+  MULTICHAN_NODE_ID** ppList,
+  BYTE* pListLen)
 {
   BYTE indx;
-  /*Check group number*/
-  if(FALSE == handleCheckgroupIden(&groupIden))
+
+  if((NUMBER_OF_ENDPOINTS + 1) < ep )
   {
-    return FALSE; /*not legal number*/
+    return NODE_LIST_STATUS_ERR_ENDPOINT_OUT_OF_RANGE;
   }
-  *ppNodeId = &groups[groupIden - 1].nodeID[0];
-  *pNbrOfNodes = MAX_ASSOCIATION_IN_GROUP; /*default set to max*/
+  /*Check group number*/
+  if(FALSE == handleCheckgroupIden(&groupIden, ep))
+  {
+    return NODE_LIST_STATUS_ERR_GROUP_NBR_NOT_LEGAL; /*not legal number*/
+  }
+  AssGroupMappingLookUp(&ep, &groupIden);
+
+  *ppList = &groups[ep][groupIden - 1].subGrp[0];
+  *pListLen = MAX_ASSOCIATION_IN_GROUP; /*default set to max*/
+
   for (indx = 0; indx < MAX_ASSOCIATION_IN_GROUP; indx++)
   {
-    if(0 == groups[groupIden - 1].nodeID[indx])
+    if(0 == groups[ep][groupIden - 1].subGrp[indx].node.nodeId)
     {
-      *pNbrOfNodes = indx; /*number of nodes in list*/
+
+      *pListLen = indx; /*number of nodes in list*/
       break;  /* break out of loop*/
     }
   }
-  return TRUE;
+  if(0 == *pListLen)
+  {
+    return NODE_LIST_STATUS_ASSOCIATION_LIST_EMPTY;
+  }
+  return NODE_LIST_STATUS_SUCCESS;
 }
 
-/*============================ CheckgroupIden ===============================
-** Function description
-** Check if grouidentifier is legal and change *pGroupIden to 1 if
-** MAX_ASSOCIATION_GROUPS = 1.
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
-BOOL
-handleCheckgroupIden(BYTE* pGroupIden)
+/**
+ * @brief Checks whether a given group ID is valid.
+ * @param pGroupIden The group ID to check.
+ * @param endpoint The endpoint to which the group belongs.
+ * @return TRUE if group ID is valid, FALSE otherwise.
+ */
+static BOOL
+handleCheckgroupIden(BYTE* pGroupIden, BYTE endpoint)
 {
-  if((GetApplAssoGroupsSize() <= (*pGroupIden - 1)) || (0 == *pGroupIden))
+  if ((GetApplAssoGroupsSize(endpoint) <= (*pGroupIden - 1)) || (0 == *pGroupIden))
   {
     return FALSE; /*not legal number*/
   }
   return TRUE;
 }
 
+#ifdef NOT_USED
 /*============================ AssociationGetNode ===============================
 ** Function description
 ** Get Node Id from a Association group.
@@ -174,294 +202,609 @@ handleCheckgroupIden(BYTE* pGroupIden)
 BYTE /*node Id. Return 0 if not legal*/
 AssociationGetNode(
   BYTE groupIden,         /* Grouping Identifier*/
+  BYTE ep,
   BYTE groupIndex)             /* IN  Group index*/
 {
-  ZW_DEBUG_ASSOCIATION_SEND_STR("groupIden");
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(groupIden);
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(groupIndex);
-  ZW_DEBUG_ASSOCIATION_SEND_NL();
-  if(FALSE == handleCheckgroupIden(&groupIden))
+  if(FALSE == handleCheckgroupIden(&groupIden, ep))
   {
     return 0; /*not legal number*/
   }
-  ZW_DEBUG_ASSOCIATION_SEND_STR("AsGNode");
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(groups[groupIden - 1].nodeID[groupIndex]);
-  ZW_DEBUG_ASSOCIATION_SEND_NL();
-  return groups[groupIden - 1].nodeID[groupIndex];
-}
 
-/*============================ handleGetMaxNodesInGroup ====================
-** Function description
-** Return max nodes supported in a group.
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
+  /*Only setup lifeline for rootdevice*/
+  if((NUMBER_OF_ENDPOINTS + 1) < ep || ((1 == groupIden) && (0 < ep) ))
+  {
+    return 0;
+  }
+
+  AssGroupMappingLookUp(&ep, &groupIden);
+
+  return groups[ep][groupIden - 1].subGrp[groupIndex].node.nodeId;
+}
+#endif
+
 BYTE
-handleGetMaxNodesInGroup(void)
+handleGetMaxNodesInGroup(
+  BYTE groupIden,
+  BYTE ep)
 {
+  if ((1 == groupIden) && (0 != ep))
+  {
+    return 0;
+  }
   return MAX_ASSOCIATION_IN_GROUP;
 }
 
-/*============================ handleGetMaxAssociationGroups ===============
-** Function description
-** Return max association groups..
-**
-** Side effects:
-**
-**-------------------------------------------------------------------------*/
 BYTE
-handleGetMaxAssociationGroups(void)
+handleGetMaxAssociationGroups(BYTE endpoint)
 {
-  return GetApplAssoGroupsSize();
+  return GetApplAssoGroupsSize(endpoint);
 }
 
-/*============================   AssociationAdd   ======================
-**    Function description
-**      Adds the nodes in nodeIdP to the group
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
-void
-AssociationAdd(
-  BYTE groupIden,     /*IN group number to add nodes to*/
-  BYTE_P nodeIdP, /*IN pointer to list of nodes*/
-  BYTE noOfNodes  /*IN number of nodes in List*/
-)
+BOOL
+AssociationAddNode(
+    BYTE groupID,
+    BYTE endpoint,
+    MULTICHAN_DEST_NODE_ID* pNode,
+    BOOL multiChannelAssociation)
 {
-  BYTE i;
-  BYTE tempID;
-  BYTE bMaxInGroup = MAX_ASSOCIATION_IN_GROUP;
+  AssGroupMappingLookUp(&endpoint, &groupID);
 
-  ZW_DEBUG_ASSOCIATION_SEND_STR("AssociationAdd" );
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(groupIden);
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(*nodeIdP);
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(noOfNodes);
-  ZW_DEBUG_ASSOCIATION_SEND_NL();
+  for (indx = 0; indx < handleGetMaxNodesInGroup(groupID, endpoint) /*MAX_ASSOCIATION_IN_GROUP*/; indx++)
+  {
+    if (((groups[endpoint][groupID - 1].subGrp[indx].node.nodeId == pNode->nodeId) &&
+         (groups[endpoint][groupID - 1].subGrp[indx].node.endpoint == pNode->endpoint)&&
+         (groups[endpoint][groupID - 1].subGrp[indx].node.BitAddress == pNode->BitAddress)) ||
+        (0 == groups[endpoint][groupID - 1].subGrp[indx].node.nodeId))
+    {
+      memcpy((BYTE*)&groups[endpoint][groupID - 1].subGrp[indx].node, (BYTE*)pNode, sizeof(MULTICHAN_DEST_NODE_ID));
+      groups[endpoint][groupID - 1].subGrp[indx].nodeInfo.BitMultiChannelEncap = multiChannelAssociation;
+      groups[endpoint][groupID - 1].subGrp[indx].nodeInfo.security = GetHighestSecureLevel(ZW_GetSecurityKeys());
+      return TRUE;
+    }
+  }
 
-  /*check group number*/
-  if(FALSE == handleCheckgroupIden(&groupIden))
+  return FALSE;
+}
+
+void
+AssociationRemove(
+  uint8_t groupId,
+  uint8_t ep,
+  ZW_MULTI_CHANNEL_ASSOCIATION_REMOVE_1BYTE_V2_FRAME* pCmd,
+  uint8_t cmdLength)
+{
+  uint8_t i;
+  uint8_t j;
+  uint8_t * pCmdByteWise = (uint8_t *)pCmd;
+  ASSOCIATION_NODE_LIST list;
+  uint8_t maxNumberOfGroups;
+
+  /*Only setup lifeline for rootdevice*/
+  if ((NUMBER_OF_ENDPOINTS + 1) < ep || ((1 == groupId) && (0 < ep)))
   {
     return;
   }
 
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('_');
+  maxNumberOfGroups = GetApplAssoGroupsSize(ep);
 
-  for (i = 0; i < noOfNodes; i++)
+  if ((0 < groupId) && (maxNumberOfGroups >= groupId))
   {
-    BYTE vacant = 0xff;
-    tempID = *(nodeIdP + i);
-    
-    if (1 == groupIden)
+    AssGroupMappingLookUp(&ep, &groupId);
+
+    if ((3 == cmdLength) || ((4 == cmdLength) && (0x00 == *(pCmdByteWise + 3))))
     {
-      /* Force lifeline group to 1 index */
-      bMaxInGroup = 1;
-    }
-      
-    for (indx = 0; indx < bMaxInGroup; indx++)
-    {
-      if (groups[groupIden - 1].nodeID[indx])
+      /*
+       * The command is either [Class, Command, GroupID] or [Class, Command, GroupID, Marker].
+       * In either case, we delete all nodes in the given group.
+       */
+      for (i = 0; i < MAX_ASSOCIATION_IN_GROUP; i++)
       {
-        if (groups[groupIden - 1].nodeID[indx] == tempID)
+        /*
+         * The node can only be deleted according to the following truth table.
+         * CCA   = Command Class Association Remove Command
+         * CCMCA = Command Class Multi Channel Association Remove Command
+         * MC    = Multi Channel associated node
+         * T     = TRUE
+         * F     = FALSE
+         *      | CCA | CCMCA |
+         * --------------------
+         * MC=T |  V  |   V   |
+         * --------------------
+         * MC=F |  %  |   V   |
+         * --------------------
+         */
+        if (!((COMMAND_CLASS_ASSOCIATION == *pCmdByteWise) && (TRUE == groups[ep][groupId-1].subGrp[i].nodeInfo.BitMultiChannelEncap)))
         {
-          vacant = 0xFF;  /*prevent duplicated nodeID since the list can have gaps*/
-          break;  /* Allready in */
-        }
-      }
-      else
-      {
-        if (vacant == 0xff)
-        {
-          vacant = indx;
-        }
-      }
-    }
-    if (vacant != 0xff)
-    {
-      groups[groupIden - 1].nodeID[vacant] = tempID;
-      AssociationStoreAll();
-    }
-  }
-  CmdReceivedEvent(COMMAND_CLASS_ASSOCIATION, ASSOCIATION_SET_V2);
-}
-
-/*============================   AssociationRemove   ======================
-**    Function description
-**      Removes association members from specified group
-**      If noOfNodes = 0 group is removed
-**
-**    In version 2 grouping identifier in conjunction with sequence of NodeID’s
-**    are interpreted as follows:
-**                                               | Grouping identifier | Number of node ID’s in list
-**    ------------------------------------------------------------------------------------------------
-**    Clear all node ID’s in grouping X          | 1 ≤ X ≤ N           | 0
-**    Clear specified node ID’s in all groupings | 0                   | >0
-**    Clear all node ID’s in all groupings       | 0                   | 0
-**
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
-void
-AssociationRemove(
-  BYTE groupIden,      /*IN groupIden number to remove nodes from*/
-  BYTE_P nodeIdP,  /*IN pointer to array of nodes to remove*/
-  BYTE noOfNodes   /*IN number of nodes in list*/
-)
-{
-  BYTE i,j,indx, tempgroupIden;
-  BYTE bMaxInGroup = MAX_ASSOCIATION_IN_GROUP;
-  
-  ZW_DEBUG_ASSOCIATION_SEND_STR("AssociationRemove ");
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(groupIden);
-  ZW_DEBUG_ASSOCIATION_SEND_NUM(noOfNodes);
-  ZW_DEBUG_ASSOCIATION_SEND_NL();
-
-  /*Use a temp groupIden because it most not be changed*/
-  tempgroupIden = groupIden;
-
-
-  if ( (0 < groupIden) && (GetApplAssoGroupsSize() >= groupIden))
-  {
-    if(noOfNodes)
-    {
-      if (1 == groupIden)
-      {
-        /* Force lifeline group to 1 node */
-        bMaxInGroup = 1;
-      }
-      
-      /*Remove noOfNodes in list "groupIden" */
-      for (i = 0; i < noOfNodes; i++)
-      {
-        for (indx = 0; indx < bMaxInGroup; indx++)
-        {
-          if (groups[groupIden-1].nodeID[indx] == *(nodeIdP+i))
-          {
-            BYTE move;
-            ZW_DEBUG_ASSOCIATION_SEND_STR("node ");
-            ZW_DEBUG_ASSOCIATION_SEND_NUM(*(nodeIdP+i));
-            ZW_DEBUG_ASSOCIATION_SEND_NL();
-            /*Set it to 0, if it is the last one*/
-            groups[groupIden-1].nodeID[indx] = 0;
-            /*Move data into the empty area*/
-            ReorderGroupAfterRemove(groupIden-1, indx);
-            break;  /* Found */
-          }
+          memset((uint8_t*)&groups[ep][groupId-1].subGrp[i], 0, sizeof(MULTICHAN_NODE_ID));
         }
       }
     }
     else
     {
-     /*Remove all nodes in list "groupIden" */
-      for (indx = 0; indx < MAX_ASSOCIATION_IN_GROUP; indx++)
+      // If this is the case, the command must be [Class, Command, GroupID, i3, i4, i5, ...].
+      ExtractCmdClassNodeList(&list,(ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME*) pCmd, cmdLength, NULL);
+      RemoveAssociationsFromGroup(*pCmdByteWise, ep, groupId, &list);
+    }
+    AssociationStoreAll();
+  }
+  else if (0 == groupId)
+  {
+    /*
+     * When the group ID equals zero, it is desired to remove all nodes from all groups or given
+     * nodes from all groups.
+     * If the length is larger than 3, it means that only given nodes must be removed from all
+     * groups.
+     */
+    ExtractCmdClassNodeList(&list,(ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME*) pCmd, cmdLength, NULL);
+
+    for (ep = 0; ep < NUMBER_OF_ENDPOINTS + 1; ep++)
+    {
+      maxNumberOfGroups = GetApplAssoGroupsSize(ep);
+      for (j = 1; j <= maxNumberOfGroups; j++)
       {
-        groups[groupIden-1].nodeID[indx] = 0;
+        RemoveAssociationsFromGroup(*pCmdByteWise, ep, j, &list);
       }
     }
     AssociationStoreAll();
   }
-  else if(0 == groupIden)
+  else
   {
-    if(noOfNodes)
+    // Do nothing.
+  }
+}
+
+/**
+ * @brief Removes given associations or all associations from a given group.
+ * @param groupId ID of the group from where the associations must be removed.
+ * @param listOfNodes List of nodes/associations that must be removed.
+ */
+static void
+RemoveAssociationsFromGroup(
+    uint8_t cmdClass,
+    uint8_t ep,
+    uint8_t groupId,
+    ASSOCIATION_NODE_LIST * pListOfNodes)
+{
+  uint8_t i;
+  uint8_t numberOfNodes;
+
+  numberOfNodes = ((0 == pListOfNodes->noOfNodes) ? 1 : pListOfNodes->noOfNodes);
+
+  // Remove all Node ID Associations in the given list.
+  for (i = 0; i < numberOfNodes; i++)
+  {
+    for (indx = 0; indx < MAX_ASSOCIATION_IN_GROUP; indx++)
     {
-      /*Clear specified node ID's in all groupings*/
-      for(j = 0; j < GetApplAssoGroupsSize(); j++)
+      if ((FALSE == groups[ep][groupId-1].subGrp[indx].nodeInfo.BitMultiChannelEncap) &&
+          ((0 == pListOfNodes->noOfNodes && 0 == pListOfNodes->noOfMulchanNodes) || groups[ep][groupId-1].subGrp[indx].node.nodeId == pListOfNodes->pNodeId[i]))
       {
-        ZW_DEBUG_ASSOCIATION_SEND_STR("group ");
-        ZW_DEBUG_ASSOCIATION_SEND_NUM(j+1);
-        ZW_DEBUG_ASSOCIATION_SEND_NL();
-        for (i = 0; i < noOfNodes; i++)
+        memset((uint8_t*)&groups[ep][groupId-1].subGrp[indx], 0, sizeof(MULTICHAN_NODE_ID));
+        if (0 < pListOfNodes->noOfNodes)
         {
-          for (indx = 0; indx < MAX_ASSOCIATION_IN_GROUP; indx++)
-          {
-            ZW_DEBUG_ASSOCIATION_SEND_STR("check ");
-            ZW_DEBUG_ASSOCIATION_SEND_NUM(groups[j].nodeID[indx]);
-            ZW_DEBUG_ASSOCIATION_SEND_BYTE(' ');
-            ZW_DEBUG_ASSOCIATION_SEND_NUM(*(nodeIdP+i));
-            ZW_DEBUG_ASSOCIATION_SEND_NL();
-            if (groups[j].nodeID[indx] == *(nodeIdP+i))
-            {
-              ZW_DEBUG_ASSOCIATION_SEND_STR("remove ");
-              ZW_DEBUG_ASSOCIATION_SEND_NUM(groups[j].nodeID[indx]);
-              ZW_DEBUG_ASSOCIATION_SEND_NL();
-              groups[j].nodeID[indx] = 0;
-              ReorderGroupAfterRemove(j, indx);
-              break;  /* Found */
-            }
-          }
+          ReorderGroupAfterRemove(groupId-1, ep, indx);
+          break;
         }
       }
-      AssociationStoreAll();
-    }
-    else
-    {
-      /*Clear all node ID's in all groupings*/
-      AssociationInit(TRUE);
     }
   }
-  CmdReceivedEvent(COMMAND_CLASS_ASSOCIATION, ASSOCIATION_REMOVE);
+
+  if (COMMAND_CLASS_ASSOCIATION == cmdClass)
+  {
+    return;
+  }
+
+  numberOfNodes = ((0 == pListOfNodes->noOfMulchanNodes) ? 1 : pListOfNodes->noOfMulchanNodes);
+
+  // Remove all Endpoint Node ID Associations in the given list.
+  for (i = 0; i < numberOfNodes; i++)
+  {
+    for (indx = 0; indx < MAX_ASSOCIATION_IN_GROUP; indx++)
+    {
+      if ((TRUE == groups[ep][groupId-1].subGrp[indx].nodeInfo.BitMultiChannelEncap) &&
+          ((0 == pListOfNodes->noOfNodes && 0 == pListOfNodes->noOfMulchanNodes) ||
+              ((groups[ep][groupId-1].subGrp[indx].node.nodeId == pListOfNodes->pMulChanNodeId[i].nodeId) &&
+                  (groups[ep][groupId-1].subGrp[indx].node.endpoint == pListOfNodes->pMulChanNodeId[i].endpoint) &&
+                  (groups[ep][groupId-1].subGrp[indx].node.BitAddress == pListOfNodes->pMulChanNodeId[i].BitAddress))))
+      {
+        memset((uint8_t*)&groups[ep][groupId-1].subGrp[indx], 0, sizeof(MULTICHAN_NODE_ID));
+        if (0 < pListOfNodes->noOfMulchanNodes)
+        {
+          ReorderGroupAfterRemove(groupId-1, ep, indx);
+          break;
+        }
+      }
+    }
+  }
 }
 
-/*============================   AssociationStoreAll   ======================
-**    Function description
-**      Stores all groups in external Nonvolatile memory. Used by association.c
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
-void
+/**
+ * @brief Reads/Writes association data to the NVM.
+ * @param action The action to take.
+ */
+static void
+NVM_Action(NVM_ACTION action)
+{
+  BYTE i,j,k;
+  BYTE transportCap;
+
+  ZW_DEBUG_ASSOCIATION_SEND_NL();
+  ZW_DEBUG_ASSOCIATION_SEND_STR("NVM_Action groups");
+  if(READ_DATA == action){    ZW_DEBUG_ASSOCIATION_SEND_STR(" read ");}
+  else{ ZW_DEBUG_ASSOCIATION_SEND_STR(" write ");}
+
+
+  for(i = 0; i < MAX_ASSOCIATION_GROUPS; i++)
+  {
+    ZW_DEBUG_ASSOCIATION_SEND_NL();
+    ZW_DEBUG_ASSOCIATION_SEND_STR("groupeId ");
+    ZW_DEBUG_ASSOCIATION_SEND_NUM(i + 1);
+    ZW_DEBUG_ASSOCIATION_SEND_NL();
+    for(j = 0; j < NUMBER_OF_ENDPOINTS + 1; j++)
+    {
+      ZW_DEBUG_ASSOCIATION_SEND_STR("[ep");
+      ZW_DEBUG_ASSOCIATION_SEND_NUM(j);
+      ZW_DEBUG_ASSOCIATION_SEND_STR("] ");
+      for(k = 0; k < MAX_ASSOCIATION_IN_GROUP; k++)
+      {
+        if(READ_DATA == action)
+        {
+          //MemoryGetByte((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_MAGIC_far)
+          groups[j][i].subGrp[k].node.nodeId =   MemoryGetByte((WORD)&EEOFFSET_ASSOCIATION_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ]);
+          {
+            BYTE ep = MemoryGetByte((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ]);
+            groups[j][i].subGrp[k].node.endpoint = 0x7f & ep;
+            groups[j][i].subGrp[k].node.BitAddress = ((0x80 & ep) == 0) ? 0 : 1;
+          }
+
+          transportCap = MemoryGetByte((WORD)&EEOFFSET_TRANSPORT_CAPABILITIES_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ]);
+          groups[j][i].subGrp[k].nodeInfo.BitMultiChannelEncap = (*((EEOFFSET_TRANSPORT_CAPABILITIES_STRUCT*)&transportCap)).BitMultiChannelEncap;
+          groups[j][i].subGrp[k].nodeInfo.security =  (*((EEOFFSET_TRANSPORT_CAPABILITIES_STRUCT*)&transportCap)).security;
+          ZW_DEBUG_ASSOCIATION_SEND_NUM( groups[j][i].subGrp[k].node.nodeId );
+          ZW_DEBUG_ASSOCIATION_SEND_BYTE('.');
+          ZW_DEBUG_ASSOCIATION_SEND_NUM( groups[j][i].subGrp[k].node.endpoint );
+          ZW_DEBUG_ASSOCIATION_SEND_BYTE(' ');
+        }
+        else
+        {
+          MemoryPutByte((WORD)&EEOFFSET_ASSOCIATION_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ],
+                        groups[j][i].subGrp[k].node.nodeId);
+          {
+            BYTE node = groups[j][i].subGrp[k].node.endpoint | (groups[j][i].subGrp[k].node.BitAddress << 7);
+            MemoryPutByte((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ],
+                        node);
+          }
+          /**
+           * To be independent of nodeInfo bit-structure is each bit-group saved separately. This cost in NVM size!!!
+           */
+          transportCap = 0;
+          (*((EEOFFSET_TRANSPORT_CAPABILITIES_STRUCT*)&transportCap)).BitMultiChannelEncap = groups[j][i].subGrp[k].nodeInfo.BitMultiChannelEncap;
+          (*((EEOFFSET_TRANSPORT_CAPABILITIES_STRUCT*)&transportCap)).security             = groups[j][i].subGrp[k].nodeInfo.security;
+
+          MemoryPutByte((WORD)&EEOFFSET_TRANSPORT_CAPABILITIES_START_far[MAX_ASSOCIATION_IN_GROUP*(NUMBER_OF_ENDPOINTS + 1)*i + MAX_ASSOCIATION_IN_GROUP*j + k ], transportCap);
+
+          ZW_DEBUG_ASSOCIATION_SEND_NUM( groups[j][i].subGrp[k].node.nodeId );
+          ZW_DEBUG_ASSOCIATION_SEND_BYTE('.');
+          ZW_DEBUG_ASSOCIATION_SEND_NUM( groups[j][i].subGrp[k].node.endpoint );
+          ZW_DEBUG_ASSOCIATION_SEND_BYTE(' ');
+        }
+      }
+      ZW_DEBUG_ASSOCIATION_SEND_NL();
+    }
+  }
+}
+
+/**
+ * @brief Stores all associations in the NVM.
+ */
+static void
 AssociationStoreAll(void)
 {
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('D');
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('2');
-  MemoryPutBuffer((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_START_far, (BYTE *)&groups[0], ASSOCIATION_SIZE, NULL);
+  NVM_Action(WRITE_DATA);
 }
 
-/*============================   AssociationClearAll   ======================
-**    Function description
-**      Clears the Association area in Nonvolatile memory. Used by association.c
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
-void
+/**
+ * @brief Clears all associations from the NVM.
+ */
+static void
 AssociationClearAll(void)
 {
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('D');
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('1');
-  MemoryPutBuffer((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_START_far, NULL, ASSOCIATION_SIZE, NULL);
-  MemoryPutByte((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_MAGIC_far, MAGIC_VALUE); /* Now ASSOCIATION should be OK */
+  MemoryPutBuffer((WORD)&EEOFFSET_ASSOCIATION_START_far,
+                  NULL, // Write zeros.
+                  MAX_ASSOCIATION_GROUPS * (NUMBER_OF_ENDPOINTS + 1) * MAX_ASSOCIATION_IN_GROUP,
+                  NULL);
+  MemoryPutByte((WORD)&EEOFFSET_ASSOCIATION_MAGIC_far, MAGIC_VALUE); /* Now ASSOCIATION should be OK */
+  MemoryPutByte((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_MAGIC_far, MAGIC_VALUE); /* Now ASSOCIATION EP should be OK */
+  MemoryPutByte((WORD)&EEOFFSET_MAGIC_SDK_6_70_ASSOCIATION_SECURE_far, MAGIC_VALUE);/* Now ASSOCIATION secure level should be OK */
+  AssociationEndpointClearAll();
 }
 
-/*============================   AssociationInit   ==========================
-**    Function description
-**      Reads the groups stored in the Nonvolatile memory
-**    Side effects:
-**
-**--------------------------------------------------------------------------*/
+/**
+ * @brief Clears all endpoint association related data from the NVM.
+ */
+static void
+AssociationEndpointClearAll(void)
+{
+  MemoryPutBuffer((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_START_far,
+                  NULL,
+                  MAX_ASSOCIATION_GROUPS*(NUMBER_OF_ENDPOINTS + 1)*MAX_ASSOCIATION_IN_GROUP,
+                  NULL);
+  MemoryPutBuffer((WORD)&EEOFFSET_TRANSPORT_CAPABILITIES_START_far,
+                  NULL,
+                  MAX_ASSOCIATION_GROUPS*(NUMBER_OF_ENDPOINTS + 1)*MAX_ASSOCIATION_IN_GROUP,
+                  NULL);
+  MemoryPutByte((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_MAGIC_far, MAGIC_VALUE); /* Now ASSOCIATION EP should be OK */
+}
+
 void
 AssociationInit(BOOL forceClearMem)
 {
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('D');
-  ZW_DEBUG_ASSOCIATION_SEND_BYTE('0');
-  if ((MemoryGetByte((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_MAGIC_far) != MAGIC_VALUE) ||
+  if ((MemoryGetByte((WORD)&EEOFFSET_ASSOCIATION_MAGIC_far) != MAGIC_VALUE) ||
       (TRUE == forceClearMem))
   {
     /* Clear it */
     AssociationClearAll();
   }
-  MemoryGetBuffer((WORD)&nvmApplDescriptor.EEOFFSET_ASSOCIATION_START_far, (BYTE *)&groups[0], ASSOCIATION_SIZE);
+  else if ((MemoryGetByte((WORD)&EEOFFSET_ASSOCIATION_ENDPOINT_MAGIC_far) != MAGIC_VALUE) ||
+      (TRUE == forceClearMem))
+  {
+    /* Clear it */
+    AssociationEndpointClearAll();
+  }
+  NVM_Action(READ_DATA);
 }
 
-/*=======================   AssociationGetLifeLineNodeID   ========================
-**    Function description
-**      Reads the nodeID asscoiated to the lifeLine group
-**
-**    Side effects:
-**
-**------------------------------------------------------------------------------*/
-BYTE                              /*RET the nodeID of the lifeline node, 0xFF if not associated*/
-AssociationGetLifeLineNodeID(void)
+#ifdef NOT_USED
+MULTICHAN_NODE_ID*
+AssociationGetLifeLineNodeID(BYTE* pListLen)
 {
   /*get the nodeID associated to the lifeline group*/
-  return (groups[0].nodeID[0])?groups[0].nodeID[0]:0xFF;
+  *pListLen = 1; // FW TODO Need to calc ListLen!!
+  return groups[0][0].subGrp;
+}
+#endif
+
+void
+handleAssociationSet(
+    BYTE ep,
+    ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME* pCmd,
+    BYTE cmdLength)
+{
+  BYTE i = 0;
+  ASSOCIATION_NODE_LIST list;
+  BYTE multiChannelAssociation = FALSE;
+
+  // Set up lifeline for root device only.
+  if (((NUMBER_OF_ENDPOINTS + 1) < ep || ((1 == pCmd->groupingIdentifier) && (0 < ep) )) ||
+     (0 == pCmd->groupingIdentifier) || (GetApplAssoGroupsSize(ep) < pCmd->groupingIdentifier))
+  {
+    return;
+  }
+
+  ExtractCmdClassNodeList(&list, pCmd, cmdLength, &multiChannelAssociation);
+
+  for(i = 0; i < list.noOfNodes; i++)
+  {
+    MULTICHAN_DEST_NODE_ID node;
+    node.nodeId = *(list.pNodeId + i);
+    node.endpoint = 0;
+    node.BitAddress = 0;
+    if(FALSE == AssociationAddNode( pCmd->groupingIdentifier, ep, &node, FALSE ))
+    {
+      break;
+    }
+  }
+
+  for(i = 0; i < list.noOfMulchanNodes; i++)
+  {
+    if(FALSE == AssociationAddNode( pCmd->groupingIdentifier, ep, &list.pMulChanNodeId[i], multiChannelAssociation ))
+    {
+      break;
+    }
+  }
+  AssociationStoreAll();
 }
 
+/**
+ * @brief Extracts nodes and endpoints from a given (Multi Channel) Association frame.
+ * @param[out] plist
+ * @param[in] pCmd
+ * @param[in] cmdLength
+ * @param[out] pMultiChannelAssociation
+ */
+static void
+ExtractCmdClassNodeList(
+    ASSOCIATION_NODE_LIST* plist,
+    ZW_MULTI_CHANNEL_ASSOCIATION_SET_1BYTE_V2_FRAME* pCmd,
+    BYTE cmdLength,
+    BYTE* pMultiChannelAssociation)
+{
+  uint8_t i = 0;
+  uint8_t * pNodeId = NULL;
+
+  plist->pNodeId = &pCmd->nodeId1;
+  plist->noOfNodes  = 0;
+  plist->pMulChanNodeId = NULL;
+  plist->noOfMulchanNodes = 0;
+
+  if (3 >= cmdLength)
+  {
+    /*
+     * If the length is less than or equal to three, it means that it's a get or a remove. In the
+     * first case we shouldn't end up here. In the second case, we must return, since the remove
+     * command should remove all nodes.
+     */
+    plist->pNodeId = NULL;
+    return;
+  }
+
+  cmdLength -= OFFSET_PARAM_2; /*calc length on node-Id's*/
+
+  for (i = 0; i < cmdLength; i++)
+  {
+    pNodeId = plist->pNodeId + i;
+    if (MULTI_CHANNEL_ASSOCIATION_SET_MARKER_V2 == *pNodeId)
+    {
+      if (MULTI_CHANNEL_ASSOCIATION_SET_MARKER_V2 == *(pNodeId + 1))
+      {
+        /* 2 MARKERS!! error en incomming frame!*/
+        return;
+      }
+      plist->noOfMulchanNodes = (cmdLength - (i + 1)) / 2;
+      if (0 != plist->noOfMulchanNodes)
+      {
+        if (NON_NULL(pMultiChannelAssociation))
+        {
+          *pMultiChannelAssociation = TRUE;
+        }
+        plist->pMulChanNodeId = (MULTICHAN_DEST_NODE_ID*)(pNodeId + 1); /*Point after the marker*/
+        i = cmdLength;
+      }
+    }
+    else
+    {
+      plist->noOfNodes = i + 1;
+    }
+  }
+}
+
+void
+AssociationInitEndpointSupport(
+  BOOL forceClearMem,
+  ASSOCIATION_ROOT_GROUP_MAPPING* pMapping,
+  BYTE nbrGrp)
+{
+  pGroupMappingTable = pMapping;
+  numberOfGroupMappingEntries = nbrGrp;
+  AssociationInit(forceClearMem);
+}
+
+/**
+ * @brief Searches through the group mapping table and updates the variables given by the pointers.
+ * @param[in/out] pEndpoint Pointer to an endpoint.
+ * @param[in/out] pGroupID Pointer to a group ID.
+ * @return TRUE if the mapping was found, FALSE otherwise.
+ */
+static BOOL
+AssGroupMappingLookUp(
+    BYTE* pEndpoint,
+    BYTE* pGroupID)
+{
+  if ((0 == *pEndpoint) && (1 != *pGroupID) && NON_NULL(pGroupMappingTable))
+  {
+    /*Use Group mapping to get endpoint proupIden*/
+    BYTE i;
+    for (i = 0; i < numberOfGroupMappingEntries; i++)
+    {
+      if (*pGroupID == pGroupMappingTable[i].rootGrpId)
+      {
+        *pEndpoint = pGroupMappingTable[i].endpoint;
+        *pGroupID = pGroupMappingTable[i].endpointGrpId;
+        return TRUE;
+      }
+    }
+  }
+  return FALSE;
+}
+
+void
+AssociationGet(
+    uint8_t endpoint,
+    uint8_t * incomingFrame,
+    uint8_t * outgoingFrame,
+    uint8_t * outgoingFrameLength)
+{
+  uint8_t nodeCount;
+  uint8_t nodeCountMax;
+  uint8_t nodeCountNoEndpoint;
+  uint8_t nodeFieldCount;
+  uint8_t mappedEndpoint;
+  uint8_t mappedGroupID;
+  MULTICHAN_NODE_ID * pCurrentNode;
+
+  ZW_DEBUG_ASSOCIATION_SEND_STR("\r\n AssociationGet");
+  ZW_DEBUG_ASSOCIATION_SEND_NUM(endpoint);
+  ZW_DEBUG_ASSOCIATION_SEND_NUM(*incomingFrame);
+
+
+  if ((*(incomingFrame + 2) > GetApplAssoGroupsSize(endpoint)) || (0 == *(incomingFrame + 2)))
+  {
+    // If the group is invalid, we return group 1
+    *(incomingFrame + 2) = 1;
+  }
+
+  if ((1 == *(incomingFrame + 2)) && (0 < endpoint))
+  {
+    // There's only one lifeline association group and it's the one of the root device.
+    endpoint = 0; // Root device.
+  }
+
+  mappedEndpoint = endpoint;
+  mappedGroupID = *(incomingFrame + 2);
+  if (0 == endpoint)
+  {
+    AssGroupMappingLookUp(&mappedEndpoint, &mappedGroupID);
+  }
+
+  nodeCountMax = handleGetMaxNodesInGroup(*(incomingFrame + 2), endpoint);
+
+  *outgoingFrame = *incomingFrame; // Set the command class.
+
+  *(outgoingFrame + 2) = *(incomingFrame + 2); // The group
+  *(outgoingFrame + 3) = nodeCountMax;
+  *(outgoingFrame + 4) = 0; // Number of reports to follow.
+
+  // Add node IDs without endpoints if any.
+  nodeCountNoEndpoint = 0;
+  for (nodeCount = 0; nodeCount < nodeCountMax; nodeCount++)
+  {
+    pCurrentNode = &(groups[mappedEndpoint][mappedGroupID - 1].subGrp[nodeCount]);
+    if (FALSE == pCurrentNode->nodeInfo.BitMultiChannelEncap &&
+        0 < pCurrentNode->node.nodeId)
+    {
+      // No endpoints in the association
+      *(outgoingFrame + 5 + nodeCountNoEndpoint) = groups[mappedEndpoint][mappedGroupID - 1].subGrp[nodeCount].node.nodeId;
+      nodeCountNoEndpoint++;
+    }
+  }
+
+  switch (*(incomingFrame)) // Check command class.
+  {
+  case COMMAND_CLASS_ASSOCIATION:
+    *(outgoingFrame + 1) = ASSOCIATION_REPORT_V2; // The response command.
+    break;
+  case COMMAND_CLASS_MULTI_CHANNEL_ASSOCIATION_V3:
+    *(outgoingFrame + 1) = MULTI_CHANNEL_ASSOCIATION_REPORT_V3; // The response command.
+
+    // Add endpoint nodes if any.
+    nodeFieldCount = 0;
+    for (nodeCount = 0; nodeCount < nodeCountMax; nodeCount++)
+    {
+      pCurrentNode = &(groups[mappedEndpoint][mappedGroupID - 1].subGrp[nodeCount]);
+      if (TRUE == pCurrentNode->nodeInfo.BitMultiChannelEncap &&
+          0 < pCurrentNode->node.nodeId)
+      {
+        // The association contains endpoints.
+        *(outgoingFrame + 6 + nodeCountNoEndpoint + nodeFieldCount++) = *((uint8_t *)pCurrentNode);
+        *(outgoingFrame + 6 + nodeCountNoEndpoint + nodeFieldCount++) = *(((uint8_t *)pCurrentNode) + 1);
+      }
+    }
+
+    if (nodeFieldCount)
+    {
+      *(outgoingFrame + 5 + nodeCountNoEndpoint) = MULTI_CHANNEL_ASSOCIATION_REPORT_MARKER_V3;
+      *outgoingFrameLength = sizeof(ZW_MULTI_CHANNEL_ASSOCIATION_REPORT_1BYTE_V3_FRAME) - 3 + nodeCountNoEndpoint + nodeFieldCount;
+
+      // We return if there are endpoint associations.
+      return;
+    }
+    break;
+  default:
+    // We should never get here, but if we do it means that we got an invalid command class.
+    // Set the length to zero.
+    *outgoingFrameLength = 0;
+    break;
+  }
+
+  // If there are no endpoint associations we end up here.
+  *outgoingFrameLength = sizeof(ZW_ASSOCIATION_REPORT_1BYTE_FRAME) - 1 + nodeCountNoEndpoint;
+}
