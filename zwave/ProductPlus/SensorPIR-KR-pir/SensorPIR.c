@@ -328,6 +328,7 @@ static	BYTE v24 = 1;
 static	BYTE v36 = 1;
 static	BYTE	 v = 0x03;
 static	BYTE	mo = 0;
+static  BYTE batt = 0;
 
 /* FE CMD1 CMD2 LEN DATA CHK */
 enum {
@@ -381,8 +382,10 @@ static BYTE suppportedEvents = NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION
 BYTE  ApplicationInitHW(BYTE bWakeupReason) {
 	wakeupReason = bWakeupReason;
 
-	LedControlInit();
-	LedOff(2);
+	//LedControlInit();
+	//LedOff(2);
+
+  InitBatteryMonitor(wakeupReason);
 
 	//v24 = !!PIN_GET(P24);
 	//v36 = !!PIN_GET(P36);
@@ -414,7 +417,9 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
   ZW_FinishSerialIf();
 	SerialPollReset();
 	//MY_DEBUG_SEND_STR("Wakeup\r\n");
-	SerialSendFrame(0x01|0x80, 0x55, 0, 0);
+	if (wakeupReason == ZW_WAKEUP_EXT_INT) {
+		SerialSendFrame(0x01|0x80, 0x55, 0, 0);
+	}
 	/*
 	ZW_SerialPutByte(0xFE);
 	ZW_SerialFlush();
@@ -489,6 +494,11 @@ void ApplicationPoll(void) {
 		ApplTimerStop(&myMsgWaitTimer);
 		myMsgTimeout = 0;
 	}
+
+	BatterySensorRead(NULL);
+	batt = BatteryMonitorState();
+	batt = (4-(batt%4))*25;
+	mo	 = batt;
 	
 	task_in();
 	task_do();
@@ -1248,9 +1258,9 @@ static BYTE check_pir(BYTE *s) {
 	if (pir) {
 		stTask_t *t = &tasks[TASK_MOTION];
 		if (pir == 0x01) {
-			mo = 0;
+			mo |= 0x0;
 		} else if (pir == 0x02) {
-			mo = 1;
+			mo |= 0x80;
 		}
 
 		if (!misc_node_included()) {
