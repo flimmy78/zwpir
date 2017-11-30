@@ -355,6 +355,8 @@ static void SerialSendNl();
 /* 
   name        	src       req            				res
   st wake zwave stm8      int1            			(0x01|0x80) 0x55
+	include ok																		(0x02|0x80) 0x55
+	exclude ok																		(0x03|0x80) 0x55
 
   btn press			stm8 		 0x41 0x55       				(0x41|0x80) 0x55
   has person    stm8     0x42 0x55       				(0x42|0x80) 0x55
@@ -987,6 +989,12 @@ void misc_zw_learn_done(char status) {
 	MY_DEBUG_SEND_STR("misc_zw_learn_done(nodeid:");
 	MY_DEBUG_SEND_NUM(myEnv.NodeID);
 	MY_DEBUG_SEND_STR(")\r\n");
+	
+	if (myEnv.NodeID != 0x00) {
+		SerialSendFrame(0x02 | 0x80, 0x55, 0, 0);
+	} else {
+		SerialSendFrame(0x03 | 0x80, 0x55, 0, 0);
+	}
 }
 
 void misc_zw_reset_timeout() {
@@ -1009,6 +1017,12 @@ void misc_zw_reset_done(char status) {
 	MY_DEBUG_SEND_STR("misc_zw_reset_done(nodeid:");
 	MY_DEBUG_SEND_NUM(myEnv.NodeID);
 	MY_DEBUG_SEND_STR(")\r\n");
+
+	if (myEnv.NodeID != 0x00) {
+		SerialSendFrame(0x02 | 0x80, 0x55, 0, 0);
+	} else {
+		SerialSendFrame(0x03 | 0x80, 0x55, 0, 0);
+	}
 }
 
 

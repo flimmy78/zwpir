@@ -42,6 +42,10 @@ static u8 timcnt_has2no	= 0;
 static u8 wait_msg_ack                          = 0;
 static u8 wait_rsp_cmd                          = 0;
 static 	int delay_count                         = 1000;   
+static u8 included			= 0xff;
+
+#define LED_TASK			0x01
+static u8 task					= 0;
 #if 0
 #define KEY_GPIO_PORT GPIOC
 #define KEY_GPIO_PIN	GPIO_Pin_4
@@ -71,6 +75,9 @@ static 	int delay_count                         = 1000;
 #define TEST_GPIO_PORT GPIOB
 #define TEST_GPIO_PIN GPIO_Pin_4
 #endif
+
+#define LED_GPIO_PORT GPIOA
+#define LED_GPIO_PIN	GPIO_Pin_2
 
 
 /* delay */
@@ -404,6 +411,33 @@ static void io_init() {
 }
 
 
+/* led timer */
+static void led_init() {
+	GPIO_Init(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_Mode_Out_PP_High_Slow);
+	//CLK_PeripheralClockConfig (CLK_Peripheral_TIM4,ENABLE);
+	//TIM4_DeInit();
+	//TIM4_TimeBaseInit(TIM4_Prescaler_128, 0xff);//16M/8/128=15.625K，0xff=255,255*（1/15.625）=0.01632S，大约61次中断是1S
+	//TIM4_ITConfig(TIM4_IT_Update, ENABLE);//向上溢出中断使能，中断向量号25
+}
+static void led_enable() {
+	//TIM4_Cmd(ENABLE);//TIM4使能
+	task |= LED_TASK;
+}
+static void led_disable() {
+	//TIM4_Cmd(DISABLE);//TIM4使能
+	task &= ~LED_TASK;
+}
+static void led_toggle() {
+	GPIO_ToggleBits(LED_GPIO_PORT, LED_GPIO_PIN);//翻转GPD0输出状态
+}
+static void led_off() {
+  GPIO_SetBits(LED_GPIO_PORT, LED_GPIO_PIN);
+
+} 
+static void led_on() {
+	GPIO_ResetBits(LED_GPIO_PORT, LED_GPIO_PIN);
+}
+
 
 /* main */
 int main() {
@@ -430,13 +464,15 @@ int main() {
 	test_init();
 #endif
 
+	led_init();
+
 
 	while (1)  {
 #if QUICK_TEST
 		test_msg_led(1);
 #endif
 		//disable_int();
-                enable_int();
+                //enable_int();
 		AWU_IdleModeEnable();
 		uart_init(BUAD);
 
@@ -444,6 +480,22 @@ int main() {
             
 			msg_post_key();
 			event &= ~E_KEY;
+
+			led_enable();
+                        delay_count = 14000;   
+                        wait_msg_ack = 0;
+                        //wait_rsp_cmd = cmd1 | 0x80;
+                        while (delay_count && task) {
+                          led_on();
+                          mdelay(100);
+                          delay_count -= 100;
+                          
+                          led_off();
+                          mdelay(100);
+                          delay_count -= 100;
+                        }
+                        led_disable();
+                        led_off();
 #if QUICK_TEST
             uart_sendstr("0x");
             hexPrintf(AWU->APR & 0x3f);
@@ -505,14 +557,16 @@ int main() {
 			flag = 0;
 		}
 
-		enable_int();
+		//enable_int();
 
-#if QUICK_TEST
-		test_msg_led(0);
-		sleep(AWU_Timebase_2s);
-#else
-        sleep_60s();
-#endif
+	if (task == 0) {
+		#if QUICK_TEST
+			test_msg_led(0);
+			sleep(AWU_Timebase_2s);
+		#else
+      sleep_60s();
+		#endif
+		}
 	}
 }
 
@@ -610,7 +664,15 @@ INTERRUPT_HANDLER(USART_RX_IRQHandler, 28) {	/* tx */
           if (sum == b) {
             if (frame[1] == (wait_rsp_cmd | 0x80)) {
               wait_msg_ack = 1;
-            }
+            } 
+						if (frame[1] == (0x02 | 0x80)) { //include ok
+							task &= ~LED_TASK;
+							included = 1;
+						} else if (frame[1] == (0x03 | 0x80)) {
+							task &= ~LED_TASK;
+							included = 0;
+						}
+						 
           }
           state_reset();
           break;
@@ -618,4 +680,13 @@ INTERRUPT_HANDLER(USART_RX_IRQHandler, 28) {	/* tx */
           state_reset();
           break;
         }
+}
+
+INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25) {
+	/* In order to detect unexpected events during development,
+		 it is recommended to set a breakpoint on the following instruction.
+	 */
+	//TIM4_ClearITPendingBit(TIM4_IT_Update);
+
+	//led_toggle();
 }

@@ -282,12 +282,14 @@ INTERRUPT_HANDLER(TIM3_CAP_IRQHandler, 22)
   * @param  None
   * @retval None
   */
+#if 0
 INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
 {
     /* In order to detect unexpected events during development,
        it is recommended to set a breakpoint on the following instruction.
     */
 }
+#endif
 
 /**
   * @brief  SPI Interrupt routine.
