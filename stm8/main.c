@@ -1,63 +1,16 @@
 #include "stm8l10x.h"
 #include "stm8l10x_gpio.h"
 
-/* Macro */
-
+//////////////////////////////////////////////////////////////
+// DEBUG
 #define QUICK_TEST 1
-#if QUICK_TEST
-#define AWU_TIMEOUT_SEC								((30)/15)
-#define RPT_TIMEOUT										((15*60)/15)
-#define HAS_PERSON_TO_NO_PERSON_TIME	((2*60)/15)
-#else
-#define AWU_TIMEOUT_SEC								(60)
-#define RPT_TIMEOUT										(15*60)
-#define HAS_PERSON_TO_NO_PERSON_TIME	(2*60)
-#endif
 
-#define BUAD	        115200
-
-/* Enum */
-enum  {
-	S_NO_PERSON		= 0,
-	S_HAS_PERSON	= 1,
-};
-enum {
-	E_KEY					= 0x01,
-	E_PIR					= 0x02,
-	E_AWU_TIMEOUT	= 0x04,
-};
-
-enum {
-    MSG_WAKEUP_ZWAVE    = 0x01,
-    MSG_BTN_PRESS       = 0x41,
-    MSG_HAS_PERSON      = 0x42, 
-    MSG_NO_PERSON       = 0X43,
-};
-
-/* Global Variable */
-static u8 state					= S_NO_PERSON;
-static u8 event					= 0;
-static u8 timcnt				= 0;
-static u8 timcnt_has2no	= 0;
-static u8 wait_msg_ack                          = 0;
-static u8 wait_rsp_cmd                          = 0;
-static 	int delay_count                         = 1000;   
-static u8 included			= 0xff;
-
-#define LED_TASK			0x01
-static u8 task					= 0;
-#if 0
-#define KEY_GPIO_PORT GPIOC
-#define KEY_GPIO_PIN	GPIO_Pin_4
-#elif 0
-#define KEY_GPIO_PORT GPIOD
-#define KEY_GPIO_PIN	GPIO_Pin_0
-#else
+//////////////////////////////////////////////////////////////
+// Pin Configs
 #define KEY_GPIO_PORT GPIOB
 #define KEY_GPIO_PIN	GPIO_Pin_1
 #define KEY_EXTI_PIN	EXTI_Pin_1
 #define KEY_EXTI_STS	EXTI_IT_Pin1
-#endif
 
 #define PIR_GPIO_PORT GPIOB
 #define PIR_GPIO_PIN	GPIO_Pin_0
@@ -78,15 +31,238 @@ static u8 task					= 0;
 
 #define LED_GPIO_PORT GPIOA
 #define LED_GPIO_PIN	GPIO_Pin_2
+//#define LED_GPIO_PORT GPIOB
+//#define LED_GPIO_PIN	GPIO_Pin_6
 
 
+//////////////////////////////////////////////////////////////
+// Macro
+#if QUICK_TEST
+#define AWU_TIMEOUT_SEC								((30)/15)
+#define RPT_TIMEOUT										((15*60)/15)
+#define HAS_PERSON_TO_NO_PERSON_TIME	((2*60)/15)
+#else
+#define AWU_TIMEOUT_SEC								(60)
+#define RPT_TIMEOUT										(15*60)
+#define HAS_PERSON_TO_NO_PERSON_TIME	(2*60)
+#endif
+
+#define BUAD	        115200
+
+//////////////////////////////////////////////////////////////
+// Enum
+enum  {
+	S_NO_PERSON					= 0,
+	S_HAS_PERSON				= 1,
+};
+enum {
+	E_KEY								= 0x01,
+	E_PIR								= 0x02,
+	E_AWU_TIMEOUT				= 0x04,
+};
+
+enum {
+  MSG_WAKEUP_ZWAVE    = 0x01,
+  MSG_BTN_PRESS       = 0x41,
+  MSG_HAS_PERSON      = 0x42, 
+  MSG_NO_PERSON       = 0X43,
+};
+
+enum {
+	LED_TASK						= 0x01
+};
+
+//////////////////////////////////////////////////////////////
+//
+static void udelay_0p68(__IO uint16_t nCount);
+static void mdelay(__IO uint16_t ms);
+
+static void  clock_init(CLK_MasterPrescaler_TypeDef div);
+
+static void sleep_init();
+static void AWU_Init_60s(void);
+static void sleep_60s();
+static void sleep(AWU_Timebase_TypeDef ms);
+
+static void enable_int();
+static void disable_int();
+static void ext_init();
+
+static void key_init();
+
+static void pir_init();
+
+static void uart_init(uint32_t buad);
+static void uart_sendstr(u8 *str);
+static void uart_send(u8 *data, u8 len);
+static void hexPrintf(u8 data);
+
+static void msg_init();
+static void msg_post(u8 x, u8 y);
+static void msg_post_done();
+static void msg_frame_send(u8 cmd1, u8 cmd2, u8 *msg, u8 len);
+static void msg_post_msg(u8 cmd1, u8 cmd2, u8 *msg, u8 len);
+static void msg_post_key();
+static void msg_post_pir(u8 pir);
+
+static void test_init(void);
+static void test_msg_led(u8 on);
+
+static void io_init();
+
+static void led_init();
+static void led_enable();
+static void led_disable();
+static void led_toggle();
+static void led_off();
+static void led_on();
+static void led_loop();
+//////////////////////////////////////////////////////////////
+// Global Variable 
+static u8 state							= S_NO_PERSON;
+static u8 event							= 0;
+static u8 timcnt						= 0;
+static u8 timcnt_has2no			= 0;
+static u8 wait_msg_ack      = 0;
+static u8 wait_rsp_cmd      = 0;
+static int  delay_count     = 1000;   
+static u8 included					= 0xff;
+
+static u8 task							= 0;
+
+
+//////////////////////////////////////////////////////////////
+// main 
+int main() {
+	u8 flag = 0;
+        
+        clock_init(CLK_MasterPrescaler_HSIDiv2);	/* HSI 8M Hz */
+        disable_int();
+	
+        io_init();
+        led_init();
+        key_init();
+	pir_init();
+        uart_init(BUAD);
+
+	msg_init();
+#if QUICK_TEST
+	test_init();
+#endif
+	sleep_init();
+        
+	enable_int();
+        
+        /*
+        while (1) {
+                led_on();
+                
+                uart_send("\x01\x02\x03\x04\x05", 5);
+		mdelay(100);
+                led_off();
+                mdelay(100);
+	}
+        */
+
+	while (1)  {
+#if QUICK_TEST
+		test_msg_led(1);
+#endif
+		//disable_int();
+		
+		AWU_IdleModeEnable();
+		uart_init(BUAD);
+
+		if (event & E_KEY) {
+
+			msg_post_key();
+			event &= ~E_KEY;
+
+			led_loop();
+
+#if QUICK_TEST
+			uart_sendstr("0x");
+			hexPrintf(AWU->APR & 0x3f);
+			uart_sendstr("\r\n");
+			test_msg_led(1);
+#endif
+		}
+
+		switch (state) {
+			case S_NO_PERSON:
+				if (event & E_PIR) {
+					flag = 1;
+
+					state = S_HAS_PERSON;
+
+					timcnt = 0;
+					timcnt_has2no = 0;
+				}
+				else if (event & E_AWU_TIMEOUT) {
+					timcnt++;
+					if (timcnt * AWU_TIMEOUT_SEC >= RPT_TIMEOUT) {
+						flag = 1;
+						timcnt = 0;
+					}
+				}
+				break;
+
+			case S_HAS_PERSON:
+				if (event & E_PIR) {
+					timcnt_has2no = 0;
+				}
+				if (event & E_AWU_TIMEOUT) {
+					timcnt_has2no++;
+					timcnt++;
+
+					if (timcnt_has2no * AWU_TIMEOUT_SEC >= HAS_PERSON_TO_NO_PERSON_TIME) {
+						flag = 1;
+
+						state = S_NO_PERSON;
+
+						timcnt = 0;
+						timcnt_has2no = 0;
+						break;
+					}
+
+					if (timcnt * AWU_TIMEOUT_SEC >= RPT_TIMEOUT) {
+						flag = 1;
+						timcnt = 0;
+					}
+				}
+				break;
+			default:
+				break;
+		}
+		event = 0;
+
+		if (flag) {
+			msg_post_pir(state == S_NO_PERSON ? 0 : 1);
+			flag = 0;
+		}
+
+		//enable_int();
+
+		if (task == 0) {
+#if QUICK_TEST
+			test_msg_led(0);
+			sleep(AWU_Timebase_2s);
+#else
+			sleep_60s();
+#endif
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+// functions
 /* delay */
-static void udelay_0p68(__IO uint16_t nCount) {
+static void udelay_0p68(uint16_t nCount) {
 	while (nCount != 0) {
 		nCount--;
 	}
 }
-static void mdelay(__IO uint16_t ms) {
+static void mdelay(uint16_t ms) {
 	uint16_t i = 0;
 	uint16_t nCount = 0;
 	for (i = 0; i < ms; i++) {
@@ -194,11 +370,11 @@ static u8 key_get() {
 /* uart */
 static void uart_init(uint32_t buad) {
 	CLK_PeripheralClockConfig (CLK_Peripheral_USART,ENABLE); //enable ext clock
-    GPIO_Init(GPIOC,GPIO_Pin_3,GPIO_Mode_Out_PP_High_Fast);
-    GPIO_Init(GPIOC,GPIO_Pin_2,GPIO_Mode_In_PU_No_IT);
+        GPIO_Init(GPIOC,GPIO_Pin_3,GPIO_Mode_Out_PP_High_Fast);
+        GPIO_Init(GPIOC,GPIO_Pin_2,GPIO_Mode_In_PU_No_IT);
 	USART_Init(buad,USART_WordLength_8D,USART_StopBits_1,USART_Parity_No,USART_Mode_Tx|USART_Mode_Rx);
 	USART_ITConfig (USART_IT_RXNE,ENABLE);
-	USART_Cmd (ENABLE);
+	//USART_Cmd (ENABLE);
 }
 
 static void uart_sendstr(u8 *str) {
@@ -437,141 +613,32 @@ static void led_off() {
 static void led_on() {
 	GPIO_ResetBits(LED_GPIO_PORT, LED_GPIO_PIN);
 }
+static void led_loop() {
+	led_enable();
 
+	delay_count = 14000;   
 
-/* main */
-int main() {
-	u8 flag = 0;
+	wait_msg_ack = 0;
+	//wait_rsp_cmd = cmd1 | 0x80;
+	while (delay_count && task) {
+		led_on();
+		mdelay(100);
+		delay_count -= 100;
 
-	io_init();
-
-	clock_init(CLK_MasterPrescaler_HSIDiv2);	/* HSI 8M Hz */
-
-	ext_init();
-
-	uart_init(BUAD);
-
-	key_init();
-	pir_init();
-
-	sleep_init();
-
-	msg_init();
-
-	enable_int();
-
-#if QUICK_TEST
-	test_init();
-#endif
-
-	led_init();
-
-
-	while (1)  {
-#if QUICK_TEST
-		test_msg_led(1);
-#endif
-		//disable_int();
-                //enable_int();
-		AWU_IdleModeEnable();
-		uart_init(BUAD);
-
-		if (event & E_KEY) {
-            
-			msg_post_key();
-			event &= ~E_KEY;
-
-			led_enable();
-                        delay_count = 14000;   
-                        wait_msg_ack = 0;
-                        //wait_rsp_cmd = cmd1 | 0x80;
-                        while (delay_count && task) {
-                          led_on();
-                          mdelay(100);
-                          delay_count -= 100;
-                          
-                          led_off();
-                          mdelay(100);
-                          delay_count -= 100;
-                        }
-                        led_disable();
-                        led_off();
-#if QUICK_TEST
-            uart_sendstr("0x");
-            hexPrintf(AWU->APR & 0x3f);
-            uart_sendstr("\r\n");
-            test_msg_led(1);
-#endif
-		}
-
-		switch (state) {
-			case S_NO_PERSON:
-				if (event & E_PIR) {
-					flag = 1;
-
-					state = S_HAS_PERSON;
-
-					timcnt = 0;
-					timcnt_has2no = 0;
-				}
-				else if (event & E_AWU_TIMEOUT) {
-					timcnt++;
-					if (timcnt * AWU_TIMEOUT_SEC >= RPT_TIMEOUT) {
-						flag = 1;
-						timcnt = 0;
-					}
-				}
-				break;
-
-			case S_HAS_PERSON:
-				if (event & E_PIR) {
-					timcnt_has2no = 0;
-				}
-				if (event & E_AWU_TIMEOUT) {
-					timcnt_has2no++;
-					timcnt++;
-
-					if (timcnt_has2no * AWU_TIMEOUT_SEC >= HAS_PERSON_TO_NO_PERSON_TIME) {
-						flag = 1;
-
-						state = S_NO_PERSON;
-
-						timcnt = 0;
-						timcnt_has2no = 0;
-						break;
-					}
-
-					if (timcnt * AWU_TIMEOUT_SEC >= RPT_TIMEOUT) {
-						flag = 1;
-						timcnt = 0;
-					}
-				}
-				break;
-			default:
-				break;
-		}
-		event = 0;
-
-		if (flag) {
-			msg_post_pir(state == S_NO_PERSON ? 0 : 1);
-			flag = 0;
-		}
-
-		//enable_int();
-
-	if (task == 0) {
-		#if QUICK_TEST
-			test_msg_led(0);
-			sleep(AWU_Timebase_2s);
-		#else
-      sleep_60s();
-		#endif
-		}
+		led_off();
+		mdelay(100);
+		delay_count -= 100;
 	}
+
+	led_disable();
+	led_off();
 }
 
 
 
+
+///////////////////////////////////////////////////////////////////////////////////
+//interrupt handler 
 INTERRUPT_HANDLER(EXTI0_IRQHandler, 8) {   /* pir */
 	//pir = EXTI_GetITStatus(PIR_EXTI_STS);
 	event |= E_PIR;
