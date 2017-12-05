@@ -355,13 +355,18 @@ static void SerialSendNl();
 /* 
   name        	src       req            				res
   st wake zwave stm8      int1            			(0x01|0x80) 0x55
-	include ok																		(0x02|0x80) 0x55
-	exclude ok																		(0x03|0x80) 0x55
-
-  btn press			stm8 		 0x41 0x55       				(0x41|0x80) 0x55
-  has person    stm8     0x42 0x55       				(0x42|0x80) 0x55
-  no  person    stm8     0x43 0x55       				(0x43|0x80) 0x55
+	query include stm8		0x41 0x55								(0x41|0x80) 0x55
+	include 			stm8		0x42 0x55								(0x42|0x80) 0x55
+	exclude 			stm8		0x43 0x55								(0x43|0x80) 0x55
+	post pir			stm8		0x44 0x55								(0x44|0x80) 0x55
 */	
+enum {
+	MSG_WAKEUP					= 0x01, 
+	MSG_QUERY_INCLUDE		= 0x41,
+	MSG_INCLUDE					= 0x42,
+	MSG_EXCLUDE					= 0x43,
+	MSG_POST_PIR				= 0x44,
+};
 
 #define SF_VERSION "1.0.0"
 
@@ -420,7 +425,7 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
 	SerialPollReset();
 	//MY_DEBUG_SEND_STR("Wakeup\r\n");
 	if (wakeupReason == ZW_WAKEUP_EXT_INT) {
-		SerialSendFrame(0x01|0x80, 0x55, 0, 0);
+		SerialSendFrame(MSG_WAKEUP|0x80, 0x55, &myEnv.NodeID, 1);
 	}
 	/*
 	ZW_SerialPutByte(0xFE);
@@ -478,18 +483,25 @@ void ApplicationPoll(void) {
 	
 	if (SerialPoll()) {
 		switch (frame[1]) {
-			case 0x41:
+			case MSG_QUERY_INCLUDE:
+				SerialSendFrame(MSG_QUERY_INCLUDE|0x80, 0x55, &myEnv.NodeID, 1);
+				v = 0x03;
+				break;
+			case MSG_INCLUDE:
+				//SerialSendFrame(MSG_INCLUDE|0x80, 0x55, 0, 0);
 				v = 0x02;
-			MY_DEBUG_SEND_STR("Btn Pressed\r\n");
 				break;
-			case 0x42:
-				v = 0x01;
-			MY_DEBUG_SEND_STR("Has Person\r\n");
+			case MSG_EXCLUDE:
+				//SerialSendFrame(MSG_EXCLUDE|0x80, 0x55, 0, 0);
+				v = 0x02;
 				break;
-			case 0x43:
-				v = 0x00;
-			MY_DEBUG_SEND_STR("No Person\r\n");
-				break;
+			case MSG_POST_PIR:
+				SerialSendFrame(MSG_POST_PIR|0x80, 0x55, &frame[4], 1);
+				if (frame[4]) {
+					v = 0x01;
+				} else {
+					v = 0x00;
+				}
 			default:
 				break;
 		}
@@ -990,11 +1002,7 @@ void misc_zw_learn_done(char status) {
 	MY_DEBUG_SEND_NUM(myEnv.NodeID);
 	MY_DEBUG_SEND_STR(")\r\n");
 	
-	if (myEnv.NodeID != 0x00) {
-		SerialSendFrame(0x02 | 0x80, 0x55, 0, 0);
-	} else {
-		SerialSendFrame(0x03 | 0x80, 0x55, 0, 0);
-	}
+	SerialSendFrame(MSG_INCLUDE | 0x80, 0x55, &myEnv.NodeID, 1);
 }
 
 void misc_zw_reset_timeout() {
@@ -1018,11 +1026,7 @@ void misc_zw_reset_done(char status) {
 	MY_DEBUG_SEND_NUM(myEnv.NodeID);
 	MY_DEBUG_SEND_STR(")\r\n");
 
-	if (myEnv.NodeID != 0x00) {
-		SerialSendFrame(0x02 | 0x80, 0x55, 0, 0);
-	} else {
-		SerialSendFrame(0x03 | 0x80, 0x55, 0, 0);
-	}
+	SerialSendFrame(MSG_INCLUDE | 0x80, 0x55, &myEnv.NodeID, 1);
 }
 
 
@@ -1590,7 +1594,7 @@ static BYTE SerialPoll() {
           frame[flen++] = b;
           if (sum == b) {
 						SerialPollReset();
-						SerialSendFrame(frame[1] | 0x80, 0x55, 0, 0);
+						//SerialSendFrame(frame[1] | 0x80, 0x55, 0, 0);
 						return 1;
           }
           SerialPollReset();
