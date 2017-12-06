@@ -117,6 +117,9 @@ static void led_toggle();
 static void led_off();
 static void led_on();
 static void led_loop();
+
+static void watch_dog_init();
+static void watch_dog_reload();
 //////////////////////////////////////////////////////////////
 // Global Variable 
 static u8 state							= S_NO_PERSON;
@@ -636,7 +639,25 @@ static void led_loop() {
 
 
 
+static void watch_dog_init() {
+	//使能IWDG
+	IWDG_Enable();
+	//解除写保护  
+	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+	//LSI驱动IWDG，LSI 256分频=38000/256
+	IWDG_SetPrescaler(IWDG_Prescaler_256);
 
+	/* IWDG timeout = (RELOAD_VALUE + 1) * Prescaler / LSI 
+		 = (255 + 1) * 256 / 38 000 
+		 = 1723.63 ms */
+	IWDG_SetReload((uint8_t)RELOAD_VALUE);
+
+	/* Reload IWDG counter */
+	IWDG_ReloadCounter();
+}
+static void watch_dog_reload() {
+	IWDG_ReloadCounter(); 
+}
 ///////////////////////////////////////////////////////////////////////////////////
 //interrupt handler 
 INTERRUPT_HANDLER(EXTI0_IRQHandler, 8) {   /* pir */

@@ -27,19 +27,26 @@
 
 //////////////////////////////////////////////////////////////
 // Macro
-#if 1
+#if 0
 #define AWU_TIMEOUT_SEC								((30)/15)
 #define RPT_TIMEOUT										((15*60)/15)
 #define HAS_PERSON_TO_NO_PERSON_TIME	((2*60)/15)
-#else
+#elif 0
 #define AWU_TIMEOUT_SEC								(60)
 #define RPT_TIMEOUT										(15*60)
 #define HAS_PERSON_TO_NO_PERSON_TIME	(2*60)
+#else 
+#define AWU_TIMEOUT_SEC								((30))
+#define RPT_TIMEOUT										((15*60))
+#define HAS_PERSON_TO_NO_PERSON_TIME	((2*60))
 #endif
+
 
 #define BUAD	        115200
 
 #define MAX_SLEEP_TIME 60
+
+#define RELOAD_VALUE 255
 //////////////////////////////////////////////////////////////
 // Enum
 enum {
@@ -180,6 +187,8 @@ static u8 *msg_frame_data(u8 *fm);
 static void task_loop();
 static u8		task_sleep_time();
 
+static void watch_dog_init();
+static void watch_dog_reload();
 //////////////////////////////////////////////////////////////
 // Global Variable 
 static u8 event							= 0;
@@ -236,10 +245,12 @@ int main() {
 	msg_init();
 
 	sleep_init();
-	enable_int();
 	timer4_init();
+	//watch_dog_init();
 
+	enable_int();
 	while (1) {
+		//watch_dog_reload();
 		task_loop();
 		tt = task_sleep_time();
 		if (tt == 0) {
@@ -644,6 +655,25 @@ static u8 *msg_frame_data(u8 *fm) {
 	return fm + 4;
 }
 
+static void watch_dog_init() {
+	//使能IWDG
+	IWDG_Enable();
+	//解除写保护  
+	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+	//LSI驱动IWDG，LSI 256分频=38000/256
+	IWDG_SetPrescaler(IWDG_Prescaler_256);
+
+	/* IWDG timeout = (RELOAD_VALUE + 1) * Prescaler / LSI 
+		 = (255 + 1) * 256 / 38 000 
+		 = 1723.63 ms */
+	IWDG_SetReload((uint8_t)RELOAD_VALUE);
+
+	/* Reload IWDG counter */
+	IWDG_ReloadCounter();
+}
+static void watch_dog_reload() {
+	IWDG_ReloadCounter(); 
+}
 
 ///////////////////////////////////////////////////////////////////////////////////
 //interrupt handler 
@@ -1093,7 +1123,7 @@ int func_main_logic(void *arg) {
 							timecnt_has2no = 0;
 						}
 					}
-					event &= E_AWU_TIMEOUT;
+					event &= ~E_AWU_TIMEOUT;
 				}
 			}
 		break;
