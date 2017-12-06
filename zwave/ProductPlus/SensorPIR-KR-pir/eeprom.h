@@ -85,6 +85,8 @@ extern BYTE far EEOFFSET_MAGIC_far;
 
 extern t_nvmModuleDescriptor far nvmApplicationDescriptor;
 
+extern BYTE far MCU_VERSION_far;
+
 /* Default values */
 /* The starting address of the segment ?FD?EEPROM (to be used as a constant as (WORD)&_FD_EEPROM_S_) */
 extern unsigned char _FD_EEPROM_S_;

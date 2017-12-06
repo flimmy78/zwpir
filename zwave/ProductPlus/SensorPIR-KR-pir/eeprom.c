@@ -80,6 +80,8 @@ t_nvmModuleDescriptor far nvmApplicationDescriptor =
   (WORD)&_APP_VERSION_                  /* WORD wNvmModuleVersion           */
 };
 
+BYTE far MCU_VERSION_far;
+
 /* NVM layout SensorPIR (as in t_nvmModule) (end)                           */
 /*--------------------------------------------------------------------------*/
 

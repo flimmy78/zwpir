@@ -215,6 +215,8 @@ void misc_rf_failcnt_load();
 void misc_rf_failcnt_inc();
 void misc_rf_failcnt_clr();
 
+void misc_mcu_version_save();
+void misc_mcu_version_load();
 
 void misc_zw_init();
 
@@ -489,6 +491,7 @@ void ApplicationPoll(void) {
 			case MSG_QUERY_INCLUDE:
 				SerialSendFrame(MSG_QUERY_INCLUDE|0x80, 0x55, &myEnv.NodeID, 1);
 				MCU_VERSION = frame[4]&0xff;
+				misc_mcu_version_save();
 				v = 0x03;
 				break;
 			case MSG_INCLUDE:
@@ -898,6 +901,7 @@ void conf_load(void) {
 
 	misc_rf_failcnt_load();
 	misc_nodeid_load();
+	misc_mcu_version_load();
 
 	MY_DEBUG_SEND_STR("nodeid:");
 	MY_DEBUG_SEND_NUM(myEnv.NodeID);
@@ -944,6 +948,15 @@ void misc_rf_failcnt_clr() {
 	myEnv.RfFailCnt = 0;
 	misc_rf_failcnt_save();
 }
+
+void misc_mcu_version_save() {
+	conf_set((WORD)&MCU_VERSION_far, &MCU_VERSION, 1);
+}
+void misc_mcu_version_load() {
+	conf_get((WORD)&MCU_VERSION_far, &MCU_VERSION, 1);
+}
+
+
 void misc_zw_send_motion_completed(BYTE bStatus) {
   /*application do not take care of bStatus!*/
   //AddEvent(EVENT_APP_GET_NODELIST);
