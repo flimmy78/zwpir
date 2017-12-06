@@ -368,7 +368,8 @@ enum {
 	MSG_POST_PIR				= 0x44,
 };
 
-#define SF_VERSION "1.0.0"
+static	BYTE MY_VERSION			 = 1;
+static	BYTE MCU_VERSION		 = 0;
 
 
 static BYTE suppportedEvents = NOTIFICATION_EVENT_HOME_SECURITY_MOTION_DETECTION_UNKNOWN_LOCATION;
@@ -443,7 +444,9 @@ BYTE ApplicationInitSW(ZW_NVM_STATUS nvmStatus) {
 	MY_DEBUG_SEND_STR("\r\nWakeup:");
 	MY_DEBUG_SEND_STR(wakeup_reason_str[wakeupReason]);
 	MY_DEBUG_SEND_STR("\r\n");
-	MY_DEBUG_SEND_STR("SoftWare Version "SF_VERSION"\r\n");
+	MY_DEBUG_SEND_STR("SoftWare Version:");
+	MY_DEBUG_SEND_NUM(MY_VERSION);
+	MY_DEBUG_SEND_STR("\r\n");
 
 	ApplTimerInit();
 
@@ -485,6 +488,7 @@ void ApplicationPoll(void) {
 		switch (frame[1]) {
 			case MSG_QUERY_INCLUDE:
 				SerialSendFrame(MSG_QUERY_INCLUDE|0x80, 0x55, &myEnv.NodeID, 1);
+				MCU_VERSION = frame[4]&0xff;
 				v = 0x03;
 				break;
 			case MSG_INCLUDE:
@@ -708,8 +712,10 @@ void handleGetFirmwareVersion( BYTE bFirmwareNumber, VG_VERSION_REPORT_V2_VG* pV
 	MY_DEBUG_SEND_STR("handleGetFirmwareVersion\r\n");	
 
   if(bFirmwareNumber == 0) {
-    pVariantgroup->firmwareVersion = APP_VERSION;
-    pVariantgroup->firmwareSubVersion = APP_REVISION;
+    //pVariantgroup->firmwareVersion = APP_VERSION;
+    //pVariantgroup->firmwareSubVersion = APP_REVISION;
+    pVariantgroup->firmwareVersion = MY_VERSION;
+    pVariantgroup->firmwareSubVersion = MCU_VERSION;
   } else {
     /*Just set it to 0 if firmware n is not present*/
     pVariantgroup->firmwareVersion = 0;
