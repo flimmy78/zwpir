@@ -785,8 +785,10 @@ int func_query_include(void *arg) {
 			t->state = S_IDLE;
 			if (included) {
 				tasks[TASK_MAIN_LOGIC].state  = S_MAIN_INCLUDED;
+			event = 0;
 			} else {
 				tasks[TASK_MAIN_LOGIC].state  = S_MAIN_NOT_INCLUDED;
+			event = 0;
 			}
 		break;
 	}
@@ -838,6 +840,7 @@ int func_include(void *arg) {
 		case S_WAKEUP_FAILED:
 			t->state = S_IDLE;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_NOT_INCLUDED;
+			event = 0;
 		break;
 		case S_INCLUDE_INCLUDE:
 			msg_include();
@@ -868,11 +871,13 @@ int func_include(void *arg) {
 			t->state = S_IDLE;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_NOT_INCLUDED;
 			led_off();
+			event = 0;
 		break;
 		case S_INCLUDE_INCLUDE_SUCCESS:
 			t->state = S_IDLE;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_INCLUDED;
 			led_off();
+			event = 0;
 		break;
 	}
 	return 0;
@@ -955,11 +960,13 @@ int func_exclude(void *arg) {
 			t->state = S_IDLE;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_INCLUDED;
 			led_off();
+			event = 0;
 		break;
 		case S_EXCLUDE_EXCLUDE_SUCCESS:
 			t->state = S_IDLE;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_NOT_INCLUDED;
 			led_off();
+			event = 0;
 		break;
 	}
 	return 0;
@@ -1010,6 +1017,7 @@ int func_post_pir(void *arg) {
 		break;
 		case S_WAKEUP_FAILED:
 			t->state = S_IDLE;
+			event = 0;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_INCLUDED;
 		break;
 		case S_POST_PIR_POST:
@@ -1033,10 +1041,12 @@ int func_post_pir(void *arg) {
 		break;
 		case S_POST_PIR_POST_FAILED:
 			t->state = S_IDLE;
+			event = 0;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_INCLUDED;
 		break;
 		case S_POST_PIR_POST_SUCCESS:
 			t->state = S_IDLE;
+			event = 0;
 			tasks[TASK_MAIN_LOGIC].state = S_MAIN_INCLUDED;
 		break;
 	}
